@@ -1,0 +1,93 @@
+#!/bin/zsh
+# aeon-voice-common — Shared functions for the AEON Voice system.
+# Sourced by all voice scripts. Do not execute directly.
+
+FLAG_FILE="$HOME/.aeon-voice-enabled"
+SOUND_ON="/System/Library/Sounds/Glass.aiff"
+SOUND_OFF="/System/Library/Sounds/Funk.aiff"
+
+ensure_voice_flag() {
+  local current=""
+  if [[ -f "$FLAG_FILE" ]]; then
+    current="$(tr -d '[:space:]' < "$FLAG_FILE" 2>/dev/null)"
+  fi
+  case "$current" in
+    on|off) ;;
+    *)
+      printf 'on\n' > "$FLAG_FILE"
+      chmod 600 "$FLAG_FILE" 2>/dev/null || true
+      ;;
+  esac
+}
+
+voice_flag_value() {
+  ensure_voice_flag
+  tr -d '[:space:]' < "$FLAG_FILE"
+}
+
+voice_enabled() {
+  [[ "$(voice_flag_value)" == "on" ]]
+}
+
+set_voice_flag() {
+  local value="$1"
+  printf '%s\n' "$value" > "$FLAG_FILE"
+  chmod 600 "$FLAG_FILE" 2>/dev/null || true
+}
+
+play_voice_state_sound() {
+  local state="$1"
+  local sound_file=""
+  case "$state" in
+    on)  sound_file="$SOUND_ON" ;;
+    off) sound_file="$SOUND_OFF" ;;
+    *)   return 0 ;;
+  esac
+  if [[ -f "$sound_file" ]]; then
+    /usr/bin/afplay "$sound_file" >/dev/null 2>&1 &!
+  fi
+}
+
+teams_call_active() {
+  pmset -g assertions 2>/dev/null | grep -q "Microsoft Teams Call in progress"
+}
+
+edge_tts_available() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -m edge_tts --help >/dev/null 2>&1
+}
+
+speak_edge_tts() {
+  local voice="$1"
+  local rate="$2"
+  local message="$3"
+
+  [[ -n "$message" ]] || return 0
+  voice_enabled || return 0
+  teams_call_active && return 0
+  edge_tts_available || return 0
+
+  # Fully detach TTS generation + playback + cleanup into its own process.
+  # &! (zsh: background + disown) makes it immune to terminal death —
+  # the voice plays to completion even if the calling terminal is killed.
+  (
+    # Clean up stale temp files from prior interrupted runs (older than 2 min)
+    find /tmp -name 'aeon-voice-*' -mmin +2 -delete 2>/dev/null || true
+
+    local tmpbase
+    tmpbase="$(mktemp /tmp/aeon-voice-XXXXXX)"
+    local tmpfile="${tmpbase}.mp3"
+
+    if [[ -n "$rate" ]]; then
+      python3 -m edge_tts --voice "$voice" --rate "$rate" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
+    else
+      python3 -m edge_tts --voice "$voice" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
+    fi
+
+    if [[ -s "$tmpfile" ]]; then
+      /usr/bin/afplay "$tmpfile" >/dev/null 2>&1
+    fi
+
+    rm -f "$tmpfile" "$tmpbase"
+  ) &!
+}

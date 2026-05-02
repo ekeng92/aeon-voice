@@ -1,0 +1,27 @@
+#!/bin/zsh
+# aeon-voice-toggle — Toggle AEON voice on/off.
+
+source "$HOME/.local/bin/aeon-voice-common"
+
+case "$1" in
+  status)
+    echo "AEON voice $(voice_flag_value | tr '[:lower:]' '[:upper:]')"
+    exit 0
+    ;;
+  "")
+    ;;
+  *)
+    echo "Usage: aeon-voice-toggle [status]"
+    exit 1
+    ;;
+esac
+
+if voice_enabled; then
+  set_voice_flag off
+  play_voice_state_sound off
+  echo "AEON voice MUTED"
+else
+  set_voice_flag on
+  play_voice_state_sound on
+  echo "AEON voice ON"
+fi

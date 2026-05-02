@@ -1,0 +1,28 @@
+#!/bin/zsh
+# aeon-voice-init — Initialize, repair, or query the AEON voice system.
+
+source "$HOME/.local/bin/aeon-voice-common"
+
+case "$1" in
+  on)
+    set_voice_flag on
+    play_voice_state_sound on
+    echo "AEON voice ON"
+    ;;
+  off)
+    set_voice_flag off
+    play_voice_state_sound off
+    echo "AEON voice MUTED"
+    ;;
+  status)
+    echo "AEON voice $(voice_flag_value | tr '[:lower:]' '[:upper:]')"
+    ;;
+  "")
+    ensure_voice_flag
+    echo "AEON voice initialized: $(voice_flag_value)"
+    ;;
+  *)
+    echo "Usage: aeon-voice-init [on|off|status]"
+    exit 1
+    ;;
+esac

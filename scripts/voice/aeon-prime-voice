@@ -1,0 +1,6 @@
+#!/bin/zsh
+# AEON Prime Voice — Neural TTS via edge-tts
+# Voice: Andrew (en-US) — Calm, measured, steady.
+
+source "$HOME/.local/bin/aeon-voice-common"
+speak_edge_tts "en-US-AndrewNeural" "" "$1"

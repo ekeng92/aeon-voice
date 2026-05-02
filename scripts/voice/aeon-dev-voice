@@ -1,0 +1,6 @@
+#!/bin/zsh
+# AEON Dev Voice — Neural TTS via edge-tts
+# Voice: Ava (en-US) — Confident, expressive, quick (+10% rate).
+
+source "$HOME/.local/bin/aeon-voice-common"
+speak_edge_tts "en-US-AvaNeural" "+10%" "$1"
