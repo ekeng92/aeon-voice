@@ -73,6 +73,13 @@ pkill -f "afplay /tmp/aeon-voice-" 2>/dev/null || true
 find /tmp -name 'aeon-voice-*' -delete 2>/dev/null || true
 ok "Cleaned temp files"
 
+# Remove Copilot instruction file
+COPILOT_FILE="$HOME/.copilot/instructions/aeon-voice.instructions.md"
+if [[ -f "$COPILOT_FILE" ]]; then
+    rm -f "$COPILOT_FILE"
+    ok "Removed Copilot instruction file"
+fi
+
 # Note: we intentionally do NOT remove ~/.aeon-voice-enabled
 # The user may want to preserve their preference.
 
