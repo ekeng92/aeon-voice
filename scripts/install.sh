@@ -8,11 +8,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-BIN_DIR="$HOME/.local/bin"
-FLAG_FILE="$HOME/.aeon-voice-enabled"
+
+# Support AEON_PREFIX for dry-run / sandboxed installs
+AEON_HOME="${AEON_PREFIX:-$HOME}"
+BIN_DIR="$AEON_HOME/.local/bin"
+FLAG_FILE="$AEON_HOME/.aeon-voice-enabled"
 APP_NAME="AEON Voice"
-INSTALL_DIR="$HOME/Applications"
-LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
+INSTALL_DIR="$AEON_HOME/Applications"
+LAUNCH_AGENT_DIR="$AEON_HOME/Library/LaunchAgents"
 LAUNCH_AGENT_ID="com.aeon.voice"
 LAUNCH_AGENT_PLIST="$LAUNCH_AGENT_DIR/$LAUNCH_AGENT_ID.plist"
 
@@ -33,6 +36,11 @@ echo -e "${BOLD}═════════════════════�
 echo -e "${BOLD}  AEON Voice — Installation${RESET}"
 echo -e "${BOLD}═══════════════════════════════════════════${RESET}"
 echo ""
+
+if [[ -n "${AEON_PREFIX:-}" ]]; then
+    warn "DRY RUN MODE — installing to $AEON_HOME (not your real home)"
+    echo ""
+fi
 
 # ── Step 1: Check macOS version ────────────────────────────────────────
 
@@ -69,7 +77,7 @@ if python3 -m edge_tts --help &>/dev/null; then
     ok "edge-tts available"
 else
     warn "edge-tts not found. Installing..."
-    pip3 install edge-tts --quiet
+    python3 -m pip install --user edge-tts --quiet 2>/dev/null || python3 -m pip install edge-tts --quiet --break-system-packages 2>/dev/null || pip3 install edge-tts --quiet
     if python3 -m edge_tts --help &>/dev/null; then
         ok "edge-tts installed"
     else
@@ -146,9 +154,14 @@ fi
 
 # ── Step 10: Optional LaunchAgent (auto-start on login) ───────────────
 
-echo ""
-read -p "  Start AEON Voice automatically on login? [y/N] " -n 1 -r
-echo ""
+if [[ -n "${AEON_PREFIX:-}" ]]; then
+    info "Skipping LaunchAgent (dry-run mode)"
+    REPLY="n"
+else
+    echo ""
+    read -p "  Start AEON Voice automatically on login? [y/N] " -n 1 -r < /dev/tty
+    echo ""
+fi
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     mkdir -p "$LAUNCH_AGENT_DIR"
@@ -179,7 +192,7 @@ fi
 
 # ── Step 11: VS Code Copilot integration ──────────────────────────────
 
-COPILOT_DIR="$HOME/.copilot/instructions"
+COPILOT_DIR="$AEON_HOME/.copilot/instructions"
 COPILOT_FILE="$COPILOT_DIR/aeon-voice.instructions.md"
 SOURCE_INSTRUCTION="$PROJECT_DIR/examples/aeon-voice.instructions.md"
 
@@ -196,7 +209,7 @@ echo ""
 
 if [[ -f "$COPILOT_FILE" ]]; then
     warn "Copilot instruction file already exists at $COPILOT_FILE"
-    read -p "  Overwrite with latest version? [y/N] " -n 1 -r
+    read -p "  Overwrite with latest version? [y/N] " -n 1 -r < /dev/tty
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         cp "$SOURCE_INSTRUCTION" "$COPILOT_FILE"
@@ -207,7 +220,7 @@ if [[ -f "$COPILOT_FILE" ]]; then
         OPEN_INSTRUCTION=false
     fi
 else
-    read -p "  Enable AI agent voice in VS Code? [Y/n] " -n 1 -r
+    read -p "  Enable AI agent voice in VS Code? [Y/n] " -n 1 -r < /dev/tty
     echo ""
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         mkdir -p "$COPILOT_DIR"

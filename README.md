@@ -45,6 +45,36 @@ The installer will:
 4. Install voice scripts to `~/.local/bin/`
 5. Initialize the voice flag file
 6. Optionally set up a LaunchAgent for auto-start
+7. Optionally install VS Code Copilot integration (teaches agents to speak)
+
+### Troubleshooting
+
+**"AEON Voice.app is damaged"** — macOS Gatekeeper may flag unsigned apps. Fix:
+```bash
+xattr -cr ~/Applications/AEON\ Voice.app
+```
+
+**edge-tts install fails** — On newer macOS with system Python, you may need:
+```bash
+python3 -m pip install --user edge-tts
+```
+
+**Voices don't play** — Ensure `~/.local/bin` is in your PATH:
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+## Dry Run (Safe Testing)
+
+Test the full install without touching your real home directory:
+
+```bash
+git clone https://github.com/ekeng92/aeon-voice.git /tmp/aeon-voice-test
+cd /tmp/aeon-voice-test
+AEON_PREFIX=/tmp/aeon-test-home bash scripts/install.sh
+```
+
+This installs everything under `/tmp/aeon-test-home/` instead of `~/`. The app builds normally but scripts, flag file, and Copilot instructions go to the sandbox. Clean up with `rm -rf /tmp/aeon-test-home /tmp/aeon-voice-test`.
 
 ## Uninstall
 
