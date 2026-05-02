@@ -72,15 +72,31 @@ aeon-prime-voice "Hello"   # Speak with Prime voice (Andrew)
 aeon-dev-voice "Hello"     # Speak with Dev voice (Ava)
 ```
 
-### Agent Integration
+### Agent Integration (VS Code Copilot)
 
-Agents check the flag file before speaking:
+The install script optionally sets up a **global Copilot instruction file** that teaches AI agents when and how to speak. This works with GitHub Copilot, Claude, and any IDE that supports VS Code instruction files.
 
+**What it does**: Installs `~/.copilot/instructions/aeon-voice.instructions.md` — a user-level instruction file that applies to ALL your VS Code workspaces. When present, agents will:
+- Speak aloud when they finish a task
+- Speak when they're waiting for your input
+- Check `~/.aeon-voice-enabled` before every voice call (so muting from the menu bar silences agents immediately)
+- Echo a `> 🔊` breadcrumb in chat so you can see which thread spoke
+
+**Customize it**: The instruction file is yours. Open it in VS Code and edit:
+- When agents voice (add/remove triggers)
+- Which voice they use (swap voice profiles)
+- How verbose they are (short status vs. full sentences)
+- Which workspaces it applies to (change the `applyTo` pattern)
+
+**Add it later**: If you skipped during install, run:
 ```bash
-[[ "$(cat ~/.aeon-voice-enabled)" == "on" ]] && aeon-prime-voice "Task complete."
+mkdir -p ~/.copilot/instructions
+cp examples/aeon-voice.instructions.md ~/.copilot/instructions/
 ```
 
-The flag file (`~/.aeon-voice-enabled`) is the single source of truth. The app watches it in real time — toggle from CLI and the menu bar updates instantly, and vice versa.
+**Remove it**: Delete `~/.copilot/instructions/aeon-voice.instructions.md` and agents stop speaking.
+
+The flag file (`~/.aeon-voice-enabled`) is the runtime toggle. The instruction file is the behavioral contract. Together they give you full control — mute instantly from the menu bar, or reshape how agents speak by editing the instruction file.
 
 ## Voice Profiles
 

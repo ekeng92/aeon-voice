@@ -177,6 +177,50 @@ else
     info "Skipped LaunchAgent. Start manually: open '$INSTALL_DIR/$APP_NAME.app'"
 fi
 
+# ── Step 11: VS Code Copilot integration ──────────────────────────────
+
+COPILOT_DIR="$HOME/.copilot/instructions"
+COPILOT_FILE="$COPILOT_DIR/aeon-voice.instructions.md"
+SOURCE_INSTRUCTION="$PROJECT_DIR/examples/aeon-voice.instructions.md"
+
+echo ""
+echo -e "${CYAN}  VS Code Copilot Integration${RESET}"
+echo ""
+echo "  AEON Voice can teach your AI agents (GitHub Copilot, Claude, etc.)"
+echo "  when and how to speak. This installs a global instruction file that"
+echo "  applies across all your VS Code workspaces."
+echo ""
+echo "  Location: $COPILOT_FILE"
+echo "  You can edit it anytime to customize voice behavior."
+echo ""
+
+if [[ -f "$COPILOT_FILE" ]]; then
+    warn "Copilot instruction file already exists at $COPILOT_FILE"
+    read -p "  Overwrite with latest version? [y/N] " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        cp "$SOURCE_INSTRUCTION" "$COPILOT_FILE"
+        ok "Copilot instruction file updated"
+        OPEN_INSTRUCTION=true
+    else
+        info "Kept existing instruction file"
+        OPEN_INSTRUCTION=false
+    fi
+else
+    read -p "  Enable AI agent voice in VS Code? [Y/n] " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        mkdir -p "$COPILOT_DIR"
+        cp "$SOURCE_INSTRUCTION" "$COPILOT_FILE"
+        ok "Copilot instruction file installed"
+        OPEN_INSTRUCTION=true
+    else
+        info "Skipped Copilot integration. You can add it later:"
+        echo "    cp examples/aeon-voice.instructions.md ~/.copilot/instructions/"
+        OPEN_INSTRUCTION=false
+    fi
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────
 
 echo ""
@@ -187,7 +231,16 @@ echo ""
 echo "  App:      $INSTALL_DIR/$APP_NAME.app"
 echo "  Scripts:  $BIN_DIR/aeon-*"
 echo "  Flag:     $FLAG_FILE"
+if [[ -f "$COPILOT_FILE" ]]; then
+echo "  Copilot:  $COPILOT_FILE"
+fi
 echo ""
 echo "  Launch:   open '$INSTALL_DIR/$APP_NAME.app'"
 echo "  CLI:      aeon-voice-control"
 echo ""
+
+# Open the instruction file in VS Code so the user can review/customize it
+if [[ "$OPEN_INSTRUCTION" == "true" ]] && command -v code &>/dev/null; then
+    echo "  Opening instruction file in VS Code..."
+    code "$COPILOT_FILE"
+fi
