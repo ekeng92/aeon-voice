@@ -1,0 +1,4 @@
+#!/bin/zsh
+# aeon-voice-status — Show current AEON voice state.
+
+exec "$HOME/.local/bin/aeon-voice-init" status
