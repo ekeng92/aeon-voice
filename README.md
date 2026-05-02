@@ -24,16 +24,18 @@ A 60KB SwiftUI binary that lives in your menu bar. Click the waveform icon → p
 
 ## Install
 
+One command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ekeng92/aeon-voice/main/scripts/remote-install.sh | bash
+```
+
+Or clone and install manually:
+
 ```bash
 git clone https://github.com/ekeng92/aeon-voice.git
 cd aeon-voice
 make install
-```
-
-Or run the install script directly:
-
-```bash
-bash scripts/install.sh
 ```
 
 The installer will:
