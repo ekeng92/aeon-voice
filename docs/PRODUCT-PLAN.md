@@ -208,6 +208,21 @@ Exit criteria:
 - Agents can call `aeon-voice`
 - Voice mutes during Teams calls
 
+
+### Feature Candidate — Persistent Notifications
+
+Problem: voice is ephemeral. If the developer steps away, they can miss the spoken completion/follow-up message.
+
+Feature: optionally show a macOS notification when an agent voice event indicates task completion, failure, or follow-up needed.
+
+Recommended scope:
+- User setting: notifications on/off
+- Trigger only for meaningful task events, not every voice line
+- Notification body uses the same short message passed to voice
+- Future scheduler integration can attach run/task IDs
+
+Rationale: this directly strengthens the original AEON Voice use case: never lose track of long-running agent work.
+
 ### Milestone 1 — Team-Ready Voice Release
 
 Goal: Share with team as a useful Copilot/agent voice utility.
