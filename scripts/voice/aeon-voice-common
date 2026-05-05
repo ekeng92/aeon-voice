@@ -3,6 +3,7 @@
 # Sourced by all voice scripts. Do not execute directly.
 
 FLAG_FILE="$HOME/.aeon-voice-enabled"
+CONFIG_FILE="$HOME/.aeon-voice-config.json"
 SOUND_ON="/System/Library/Sounds/Glass.aiff"
 SOUND_OFF="/System/Library/Sounds/Funk.aiff"
 
@@ -57,6 +58,34 @@ edge_tts_available() {
   python3 -m edge_tts --help >/dev/null 2>&1
 }
 
+# Read a value from the JSON config file.
+# Usage: read_config_value <key> <default>
+read_config_value() {
+  local key="$1"
+  local default_val="$2"
+  if [[ -f "$CONFIG_FILE" ]]; then
+    local val
+    val="$(grep "\"$key\"" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*: *//; s/["\,]//g; s/^ *//; s/ *$//')"
+    if [[ -n "$val" ]]; then
+      echo "$val"
+      return
+    fi
+  fi
+  echo "$default_val"
+}
+
+# Truncate message to max characters from config (0 = unlimited).
+apply_max_chars() {
+  local message="$1"
+  local max_chars
+  max_chars="$(read_config_value maxCharacters 0)"
+  if [[ "$max_chars" -gt 0 && ${#message} -gt $max_chars ]]; then
+    echo "${message:0:$max_chars}"
+  else
+    echo "$message"
+  fi
+}
+
 speak_edge_tts() {
   local voice="$1"
   local rate="$2"
@@ -64,7 +93,17 @@ speak_edge_tts() {
 
   [[ -n "$message" ]] || return 0
   voice_enabled || return 0
-  teams_call_active && return 0
+
+  # Check meeting auto-mute (configurable per service)
+  local mute_teams
+  mute_teams="$(read_config_value muteOnTeams true)"
+  if [[ "$mute_teams" == "true" ]]; then
+    teams_call_active && return 0
+  fi
+
+  # Apply max character limit from config
+  message="$(apply_max_chars "$message")"
+
   edge_tts_available || return 0
 
   # Fully detach TTS generation + playback + cleanup into its own process.

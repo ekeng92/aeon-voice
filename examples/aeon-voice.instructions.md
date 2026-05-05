@@ -11,14 +11,15 @@ applyTo: "**"
 > Location: ~/.copilot/instructions/aeon-voice.instructions.md
 > Scope: Applies to ALL workspaces in VS Code (user-level instruction file)
 
-## Voice Commands
+## Voice Command
 
-Agents have access to these voice scripts (installed at ~/.local/bin/):
+Agents use a single command for all voice output:
 
-| Voice | Style | Command |
-|-------|-------|---------|
-| **Prime** (default) | Calm, measured, steady | `~/.local/bin/aeon-prime-voice "<message>"` |
-| **Dev** | Confident, expressive, quick | `~/.local/bin/aeon-dev-voice "<message>"` |
+```bash
+~/.local/bin/aeon-voice "<message>"
+```
+
+The voice, speed, and maximum message length are configured in the **AEON Voice** menu bar app. Settings are stored in `~/.aeon-voice-config.json`.
 
 ## When to Voice
 
@@ -35,16 +36,17 @@ Follow these steps every time a voice trigger occurs:
    `> 🔊 "Done. Built the component and all tests pass."`
 3. **Run the voice command** (only if toggle is `on`):
    ```bash
-   [[ "$(cat ~/.aeon-voice-enabled 2>/dev/null)" == "on" ]] && ~/.local/bin/aeon-prime-voice "Done. Built the component and all tests pass."
+   [[ "$(cat ~/.aeon-voice-enabled 2>/dev/null)" == "on" ]] && ~/.local/bin/aeon-voice "Done. Built the component and all tests pass."
    ```
 4. **Terminal pattern**: Use `run_in_terminal` with `mode=async` and `timeout=5000`. The script detaches playback internally and returns instantly
 
 ## Rules
 
 - **Do NOT add trailing `&`** to voice commands — the scripts handle background execution with `&!` (zsh disown)
-- **Auto-mute during meetings**: Scripts detect Microsoft Teams calls via `pmset` and suppress audio automatically. No agent action needed
+- **Auto-mute during meetings**: The app can auto-mute during Microsoft Teams calls (configurable in Settings). No agent action needed
+- **Max characters**: Messages exceeding the configured limit are automatically truncated before TTS generation. The limit is set in the menu bar app (default: 500)
 - **Voice length**: First person, conversational. Short status lines are fine ("Done, tests pass.") but don't artificially compress — if the context needs a couple sentences, speak them naturally
-- **The menu bar app controls mute state**: Users toggle voice on/off from the AEON Voice menu bar app. The flag file (`~/.aeon-voice-enabled`) is the shared contract between the app and agents
+- **The menu bar app controls all settings**: Voice on/off, default voice, max characters, and meeting auto-mute are all managed from the AEON Voice menu bar app. The flag file (`~/.aeon-voice-enabled`) is the shared contract between the app and agents
 
 ## Customization Guide
 
@@ -54,20 +56,10 @@ Edit the "When to Voice" section above. For example, you could add:
 - Voice at the start of each task
 - Voice only when explicitly asked
 
-### Change the voice style
-The voice scripts use Microsoft's neural TTS voices via edge-tts. To use a
-different voice, create a new script in `~/.local/bin/`:
-
-```bash
-#!/bin/zsh
-source "$HOME/.local/bin/aeon-voice-common"
-speak_edge_tts "en-US-JennyNeural" "+5%" "$1"
-```
-
-Popular voices: AndrewNeural, AvaNeural, JennyNeural, GuyNeural, AriaNeural.
-Full list: https://github.com/rany2/edge-tts#voices
-
-Then add it to the voice table above and reference it in your agent instructions.
+### Change the voice
+Use the AEON Voice menu bar app → Settings → Default Voice. Changes apply
+immediately to all agents. Available voices include Andrew, Ava, Aria,
+Christopher, Eric, Guy, Jenny, Michelle, and Steffan.
 
 ### Limit voice to specific workspaces
 Change `applyTo: "**"` in the frontmatter to a specific glob pattern, or move

@@ -114,6 +114,7 @@ mkdir -p "$BIN_DIR"
 
 VOICE_SCRIPTS=(
     aeon-voice-common
+    aeon-voice
     aeon-prime-voice
     aeon-dev-voice
     aeon-voice-toggle
