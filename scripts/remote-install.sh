@@ -38,9 +38,8 @@ info "Checking requirements..."
 MACOS_VERSION="$(sw_vers -productVersion)"
 MAJOR="$(echo "$MACOS_VERSION" | cut -d. -f1)"
 (( MAJOR >= 13 )) || fail "macOS 13+ required. You have $MACOS_VERSION."
-ok "macOS $MACOS_VERSION"
 
-# Swift
+# Swift — trigger install dialog if missing (user must re-run after)
 if ! command -v swift &>/dev/null; then
     echo ""
     warn "Swift not found. Installing Xcode CommandLineTools..."
@@ -54,18 +53,14 @@ if ! command -v swift &>/dev/null; then
     echo ""
     exit 0
 fi
-SWIFT_VERSION="$(swift --version 2>&1 | head -1)"
-ok "$SWIFT_VERSION"
 
 # Python 3
-if ! command -v python3 &>/dev/null; then
-    fail "Python 3 not found. Install via: brew install python3"
-fi
-ok "$(python3 --version 2>&1)"
+command -v python3 &>/dev/null || fail "Python 3 not found. Install via: brew install python3"
 
 # Git
 command -v git &>/dev/null || fail "Git not found."
-ok "git available"
+
+ok "All prerequisites met"
 
 # ── Clone ──────────────────────────────────────────────────
 

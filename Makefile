@@ -7,8 +7,8 @@ APP_BUNDLE   = build/$(APP_NAME).app
 INSTALL_DIR  = $(HOME)/Applications
 
 build:
-	@echo "Building $(BINARY_NAME)..."
-	swift build -c release
+	@echo "Compiling $(BINARY_NAME)..."
+	@swift build -c release 2>&1 | grep -v "^$$" | tail -3
 	@echo "Done — binary at $(BUILD_DIR)/$(BINARY_NAME)"
 
 app: build
