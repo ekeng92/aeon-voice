@@ -5,3 +5,5 @@ build/
 *.xcworkspace
 DerivedData/
 .DS_Store
+
+.worker-prompts/

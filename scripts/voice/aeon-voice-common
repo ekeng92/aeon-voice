@@ -86,6 +86,20 @@ apply_max_chars() {
   fi
 }
 
+# Send a macOS notification if showNotifications is enabled in config.
+# Fails silently — notification errors never block voice output.
+maybe_notify() {
+  local message="$1"
+  local notify_enabled
+  notify_enabled="$(read_config_value showNotifications false)"
+  [[ "$notify_enabled" == "true" ]] || return 0
+  /usr/bin/osascript - "$message" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+on run argv
+  display notification (item 1 of argv) with title "AEON Voice"
+end run
+APPLESCRIPT
+}
+
 speak_edge_tts() {
   local voice="$1"
   local rate="$2"
@@ -124,6 +138,7 @@ speak_edge_tts() {
     fi
 
     if [[ -s "$tmpfile" ]]; then
+      maybe_notify "$message"
       /usr/bin/afplay "$tmpfile" >/dev/null 2>&1
     fi
 
