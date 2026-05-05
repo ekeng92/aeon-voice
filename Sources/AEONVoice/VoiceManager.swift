@@ -81,6 +81,7 @@ final class VoiceManager: ObservableObject {
     private let flagPath: String
     private let binPath: String
     private let configPath: String
+    private let pythonPathFile: String
     private var pythonExecutable: String?
     private var fileDescriptor: Int32 = -1
     private var dispatchSource: DispatchSourceFileSystemObject?
@@ -94,6 +95,7 @@ final class VoiceManager: ObservableObject {
         flagPath = "\(home)/.aeon-voice-enabled"
         binPath = "\(home)/.local/bin"
         configPath = "\(home)/.aeon-voice-config.json"
+        pythonPathFile = "\(home)/.aeon-voice-python"
 
         loadConfig()
         readFlagFile()
@@ -336,14 +338,34 @@ final class VoiceManager: ObservableObject {
     }
 
     private func checkDependencies() {
-        let candidates = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
-        let available = candidates.filter { FileManager.default.isExecutableFile(atPath: $0) }
-        pythonAvailable = !available.isEmpty
+        let savedPython = readSavedPythonPath()
+        let candidates = ([savedPython] + [
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
+            "/usr/bin/python3"
+        ]).compactMap { $0 }
 
+        var seen = Set<String>()
+        let available = candidates.filter { path in
+            guard seen.insert(path).inserted else { return false }
+            return FileManager.default.isExecutableFile(atPath: path)
+        }
+
+        pythonAvailable = !available.isEmpty
         pythonExecutable = available.first { python in
             commandSucceeds(python, arguments: ["-m", "edge_tts", "--help"])
         }
         edgeTTSAvailable = pythonExecutable != nil
+    }
+
+    private func readSavedPythonPath() -> String? {
+        guard let data = FileManager.default.contents(atPath: pythonPathFile),
+              let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return nil
+        }
+        return path
     }
 
     private func commandSucceeds(_ executable: String, arguments: [String]) -> Bool {

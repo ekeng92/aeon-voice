@@ -13,6 +13,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 AEON_HOME="${AEON_PREFIX:-$HOME}"
 BIN_DIR="$AEON_HOME/.local/bin"
 FLAG_FILE="$AEON_HOME/.aeon-voice-enabled"
+PYTHON_PATH_FILE="$AEON_HOME/.aeon-voice-python"
 APP_NAME="AEON Voice"
 INSTALL_DIR="$AEON_HOME/Applications"
 LAUNCH_AGENT_DIR="$AEON_HOME/Library/LaunchAgents"
@@ -67,23 +68,27 @@ info "Checking Python 3..."
 if ! command -v python3 &>/dev/null; then
     fail "Python 3 not found. Install via: brew install python3"
 fi
-PYTHON_VERSION="$(python3 --version 2>&1)"
-ok "$PYTHON_VERSION"
+PYTHON_BIN="$(command -v python3)"
+PYTHON_VERSION="$($PYTHON_BIN --version 2>&1)"
+ok "$PYTHON_VERSION at $PYTHON_BIN"
 
 # ── Step 4: Check / install edge-tts ──────────────────────────────────
 
 info "Checking edge-tts..."
-if python3 -m edge_tts --help &>/dev/null; then
+if "$PYTHON_BIN" -m edge_tts --help &>/dev/null; then
     ok "edge-tts available"
 else
     warn "edge-tts not found. Installing..."
-    python3 -m pip install --user edge-tts --quiet 2>/dev/null || python3 -m pip install edge-tts --quiet --break-system-packages 2>/dev/null || pip3 install edge-tts --quiet
-    if python3 -m edge_tts --help &>/dev/null; then
+    "$PYTHON_BIN" -m pip install --user edge-tts --quiet 2>/dev/null || "$PYTHON_BIN" -m pip install edge-tts --quiet --break-system-packages 2>/dev/null || pip3 install edge-tts --quiet
+    if "$PYTHON_BIN" -m edge_tts --help &>/dev/null; then
         ok "edge-tts installed"
     else
-        fail "edge-tts installation failed. Try: pip3 install edge-tts"
+        fail "edge-tts installation failed. Try: $PYTHON_BIN -m pip install --user edge-tts"
     fi
 fi
+printf '%s\n' "$PYTHON_BIN" > "$PYTHON_PATH_FILE"
+chmod 600 "$PYTHON_PATH_FILE" 2>/dev/null || true
+ok "Python path saved: $PYTHON_PATH_FILE"
 
 # ── Step 5: Build the app ─────────────────────────────────────────────
 
@@ -255,6 +260,7 @@ echo ""
 echo "  App:      $INSTALL_DIR/$APP_NAME.app"
 echo "  Scripts:  $BIN_DIR/aeon-*"
 echo "  Flag:     $FLAG_FILE"
+echo "  Python:   $PYTHON_PATH_FILE"
 if [[ -f "$COPILOT_FILE" ]]; then
 echo "  Copilot:  $COPILOT_FILE"
 fi
