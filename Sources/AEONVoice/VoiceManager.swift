@@ -81,6 +81,7 @@ final class VoiceManager: ObservableObject {
     private let flagPath: String
     private let binPath: String
     private let configPath: String
+    private var pythonExecutable: String?
     private var fileDescriptor: Int32 = -1
     private var dispatchSource: DispatchSourceFileSystemObject?
     private var refreshTimer: Timer?
@@ -191,44 +192,104 @@ final class VoiceManager: ObservableObject {
         let name = voice?.name ?? voiceId
         let rate = voice?.defaultRate ?? ""
 
-        guard pythonAvailable && edgeTTSAvailable else {
+        guard let python = pythonExecutable, pythonAvailable && edgeTTSAvailable else {
             addLog("Cannot test: edge-tts not available")
             return
         }
 
-        let short = message.count > 50 ? String(message.prefix(50)) + "…" : message
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            addLog("Cannot test: message is empty")
+            return
+        }
+
+        let short = trimmed.count > 50 ? String(trimmed.prefix(50)) + "…" : trimmed
         addLog("Testing \(name): \"\(short)\"")
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let tmpfile = "/tmp/aeon-voice-test-\(UUID().uuidString).mp3"
+        runVoicePreview(python: python, voiceId: voiceId, rate: rate, message: trimmed, label: name)
+    }
 
-            let gen = Process()
-            gen.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            var args = ["python3", "-m", "edge_tts", "--voice", voiceId]
-            if !rate.isEmpty {
-                args += ["--rate", rate]
+    /// Preview every bundled voice sequentially. Bypasses mute state for testing.
+    func testAllVoices(message: String) {
+        guard let python = pythonExecutable, pythonAvailable && edgeTTSAvailable else {
+            addLog("Cannot test all: edge-tts not available")
+            return
+        }
+
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            addLog("Cannot test all: message is empty")
+            return
+        }
+
+        addLog("Testing all \(Self.availableVoices.count) voices")
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            for voice in Self.availableVoices {
+                self?.runVoicePreviewSync(
+                    python: python,
+                    voiceId: voice.id,
+                    rate: voice.defaultRate,
+                    message: "\(voice.name). \(trimmed)",
+                    label: voice.name
+                )
             }
-            args += ["--text", message, "--write-media", tmpfile]
-            gen.arguments = args
-            gen.standardOutput = FileHandle.nullDevice
-            gen.standardError = FileHandle.nullDevice
+            DispatchQueue.main.async { self?.refreshCounts() }
+        }
+    }
 
-            do {
-                try gen.run()
-                gen.waitUntilExit()
-                guard gen.terminationStatus == 0 else { return }
+    private func runVoicePreview(python: String, voiceId: String, rate: String, message: String, label: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.runVoicePreviewSync(python: python, voiceId: voiceId, rate: rate, message: message, label: label)
+            DispatchQueue.main.async { self?.refreshCounts() }
+        }
+    }
 
-                let play = Process()
-                play.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
-                play.arguments = [tmpfile]
-                play.standardOutput = FileHandle.nullDevice
-                play.standardError = FileHandle.nullDevice
-                try play.run()
-                play.waitUntilExit()
-                try? FileManager.default.removeItem(atPath: tmpfile)
-            } catch {
-                // Test playback is non-critical
+    private func runVoicePreviewSync(python: String, voiceId: String, rate: String, message: String, label: String) {
+        let tmpfile = "/tmp/aeon-voice-test-\(UUID().uuidString).mp3"
+
+        let gen = Process()
+        let errorPipe = Pipe()
+        gen.executableURL = URL(fileURLWithPath: python)
+        var args = ["-m", "edge_tts", "--voice", voiceId]
+        if !rate.isEmpty {
+            args += ["--rate", rate]
+        }
+        args += ["--text", message, "--write-media", tmpfile]
+        gen.arguments = args
+        gen.standardOutput = FileHandle.nullDevice
+        gen.standardError = errorPipe
+
+        do {
+            try gen.run()
+            gen.waitUntilExit()
+
+            guard gen.terminationStatus == 0, FileManager.default.fileExists(atPath: tmpfile) else {
+                let data = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorText = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
+                DispatchQueue.main.async { [weak self] in
+                    self?.addLog("\(label) test failed: \(errorText.prefix(90))")
+                }
+                return
             }
+
+            let play = Process()
+            play.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+            play.arguments = [tmpfile]
+            play.standardOutput = FileHandle.nullDevice
+            play.standardError = FileHandle.nullDevice
+            try play.run()
+            play.waitUntilExit()
+            try? FileManager.default.removeItem(atPath: tmpfile)
+            DispatchQueue.main.async { [weak self] in
+                self?.addLog("Played \(label)")
+            }
+        } catch {
+            DispatchQueue.main.async { [weak self] in
+                self?.addLog("\(label) playback error: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(atPath: tmpfile)
         }
     }
 
@@ -275,20 +336,28 @@ final class VoiceManager: ObservableObject {
     }
 
     private func checkDependencies() {
-        pythonAvailable = ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
-            .contains { FileManager.default.isExecutableFile(atPath: $0) }
+        let candidates = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
+        let available = candidates.filter { FileManager.default.isExecutableFile(atPath: $0) }
+        pythonAvailable = !available.isEmpty
 
-        if pythonAvailable {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            task.arguments = ["python3", "-m", "edge_tts", "--help"]
-            task.standardOutput = FileHandle.nullDevice
-            task.standardError = FileHandle.nullDevice
-            try? task.run()
+        pythonExecutable = available.first { python in
+            commandSucceeds(python, arguments: ["-m", "edge_tts", "--help"])
+        }
+        edgeTTSAvailable = pythonExecutable != nil
+    }
+
+    private func commandSucceeds(_ executable: String, arguments: [String]) -> Bool {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = arguments
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
             task.waitUntilExit()
-            edgeTTSAvailable = task.terminationStatus == 0
-        } else {
-            edgeTTSAvailable = false
+            return task.terminationStatus == 0
+        } catch {
+            return false
         }
     }
 

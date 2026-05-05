@@ -292,6 +292,16 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
                 .tint(.blue)
                 .controlSize(.small)
+
+                Button(action: {
+                    manager.testAllVoices(message: testMessage)
+                }) {
+                    Label("All", systemImage: "speaker.wave.3.fill")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .tint(.purple)
+                .controlSize(.small)
             }
         }
     }
