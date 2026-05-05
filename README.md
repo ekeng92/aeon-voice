@@ -2,12 +2,13 @@
 
 Native macOS menu bar app for controlling neural text-to-speech voice output.
 
-A 60KB SwiftUI binary that lives in your menu bar. Click the waveform icon → popover panel with full voice control. No Electron, no Python GUI, no runtime dependencies.
+A 300KB SwiftUI binary that lives in your menu bar. Click the waveform icon → popover panel with full voice control. No Electron, no Python GUI, no runtime dependencies.
 
 ## Features
 
 - **Menu bar native** — lives alongside Wi-Fi, Bluetooth, and battery. No dock icon, no window to manage
 - **One-click toggle** — mute/unmute voice output instantly
+- **Caffeinate mode** — prevent system sleep with one click (uses `caffeinate -s`, no sudo)
 - **Real-time status** — see voice state, dependency health, active audio, and temp files
 - **Voice testing** — test Prime (calm) and Dev (energetic) voice profiles from the panel
 - **File-watch sync** — external changes to the voice flag are reflected immediately
@@ -162,7 +163,7 @@ See [edge-tts voices](https://github.com/rany2/edge-tts#voices) for the full lis
 │  │ ● VOICE ON                │  │
 │  │ python3 ✓  edge-tts ✓    │  │
 │  └───────────────────────────┘  │
-│  [███ Toggle Voice ███████████] │
+│  [██ Voice On ██][☕ Caffeinate █] │
 │  [■ Stop] [🧹 Clean]           │
 │  [🔧 Init] [↻ Refresh]         │
 │  ┌───────────────────────────┐  │

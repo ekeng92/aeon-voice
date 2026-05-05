@@ -31,6 +31,7 @@ final class VoiceManager: ObservableObject {
     @Published private(set) var playingCount = 0
     @Published private(set) var tempFileCount = 0
     @Published private(set) var activityLog: [LogEntry] = []
+    @Published private(set) var keepAwake = false
 
     var isEnabled: Bool { voiceState == .on }
 
@@ -41,6 +42,7 @@ final class VoiceManager: ObservableObject {
     private var fileDescriptor: Int32 = -1
     private var dispatchSource: DispatchSourceFileSystemObject?
     private var refreshTimer: Timer?
+    private var caffeinateProcess: Process?
 
     // MARK: - Init / Deinit
 
@@ -67,6 +69,7 @@ final class VoiceManager: ObservableObject {
             close(fileDescriptor)
         }
         refreshTimer?.invalidate()
+        stopCaffeinate()
     }
 
     // MARK: - Public Actions
@@ -94,6 +97,18 @@ final class VoiceManager: ObservableObject {
                 self?.restartFileMonitorIfNeeded()
                 self?.addLog(output.isEmpty ? "Voice initialized" : output)
             }
+        }
+    }
+
+    func toggleKeepAwake() {
+        if keepAwake {
+            stopCaffeinate()
+            keepAwake = false
+            addLog("Keep Awake off — sleep restored")
+        } else {
+            startCaffeinate()
+            keepAwake = true
+            addLog("Keep Awake on — preventing sleep")
         }
     }
 
@@ -275,5 +290,30 @@ final class VoiceManager: ObservableObject {
         if dispatchSource == nil && FileManager.default.fileExists(atPath: flagPath) {
             startFileMonitor()
         }
+    }
+
+    // MARK: - Private — Caffeinate
+
+    private func startCaffeinate() {
+        stopCaffeinate()
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
+        task.arguments = ["-s"]  // prevent system sleep on AC
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            caffeinateProcess = task
+        } catch {
+            addLog("caffeinate failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func stopCaffeinate() {
+        if let proc = caffeinateProcess, proc.isRunning {
+            proc.terminate()
+            proc.waitUntilExit()
+        }
+        caffeinateProcess = nil
     }
 }
