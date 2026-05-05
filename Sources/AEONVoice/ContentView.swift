@@ -11,9 +11,13 @@ struct ContentView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 12)
 
-            toggleButton
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+            // Main toggles
+            HStack(spacing: 8) {
+                voiceToggle
+                caffeinateToggle
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
 
             Divider().padding(.horizontal, 16)
 
@@ -59,8 +63,15 @@ struct ContentView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(statusTitle)
-                        .font(.system(size: 16, weight: .semibold))
+                    HStack(spacing: 6) {
+                        Text(statusTitle)
+                            .font(.system(size: 16, weight: .semibold))
+                        if manager.keepAwake {
+                            Image(systemName: "cup.and.saucer.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.brown)
+                        }
+                    }
                     Text(statusSubtitle)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -88,20 +99,41 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Toggle
+    // MARK: - Voice Toggle
 
-    private var toggleButton: some View {
+    private var voiceToggle: some View {
         Button(action: { manager.toggle() }) {
-            HStack {
-                Image(systemName: manager.isEnabled ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                Text(manager.isEnabled ? "Mute Voice" : "Enable Voice")
-                    .fontWeight(.semibold)
+            VStack(spacing: 2) {
+                Image(systemName: manager.isEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                    .font(.system(size: 16))
+                Text(manager.isEnabled ? "Voice On" : "Voice Off")
+                    .font(.caption2.weight(.semibold))
             }
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            .padding(.vertical, 8)
         }
         .buttonStyle(.borderedProminent)
-        .tint(manager.isEnabled ? .green : .orange)
+        .tint(manager.isEnabled ? .green : Color(.systemGray))
+        .controlSize(.large)
+    }
+
+    // MARK: - Caffeinate Toggle
+
+    private var caffeinateToggle: some View {
+        Button(action: { manager.toggleKeepAwake() }) {
+            VStack(spacing: 2) {
+                Image(systemName: manager.keepAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
+                    .font(.system(size: 16))
+                Text(manager.keepAwake ? "Caffeinated" : "Caffeinate")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(manager.keepAwake ? .brown : Color(.systemGray))
         .controlSize(.large)
     }
 
@@ -117,16 +149,16 @@ struct ContentView: View {
                 actionButton("Stop Audio", icon: "stop.fill", tint: .red) {
                     manager.stopAudio()
                 }
-                actionButton("Clean Temp", icon: "trash", tint: .secondary) {
+                actionButton("Clean Temp", icon: "trash", tint: Color(.systemGray)) {
                     manager.cleanTemp()
                 }
             }
 
             HStack(spacing: 8) {
-                actionButton("Initialize", icon: "wrench.fill", tint: .secondary) {
+                actionButton("Initialize", icon: "wrench.fill", tint: Color(.systemGray)) {
                     manager.initialize()
                 }
-                actionButton("Refresh", icon: "arrow.clockwise", tint: .secondary) {
+                actionButton("Refresh", icon: "arrow.clockwise", tint: Color(.systemGray)) {
                     manager.refresh()
                 }
             }

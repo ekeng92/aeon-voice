@@ -89,7 +89,7 @@ fi
 
 info "Building AEON Voice..."
 cd "$PROJECT_DIR"
-bash scripts/build.sh
+make app
 echo ""
 
 # ── Step 6: Install app bundle ────────────────────────────────────────
@@ -98,6 +98,10 @@ info "Installing app to $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
 rm -rf "$INSTALL_DIR/$APP_NAME.app"
 cp -R "build/$APP_NAME.app" "$INSTALL_DIR/"
+if [[ -f "$PROJECT_DIR/resources/AppIcon.icns" ]]; then
+    mkdir -p "$INSTALL_DIR/$APP_NAME.app/Contents/Resources"
+    cp "$PROJECT_DIR/resources/AppIcon.icns" "$INSTALL_DIR/$APP_NAME.app/Contents/Resources/"
+fi
 codesign --force --deep --sign - "$INSTALL_DIR/$APP_NAME.app" 2>/dev/null || true
 touch "$INSTALL_DIR/$APP_NAME.app"
 ok "App installed: $INSTALL_DIR/$APP_NAME.app"

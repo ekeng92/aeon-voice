@@ -17,6 +17,7 @@ app: build
 	@mkdir -p "$(APP_BUNDLE)/Contents/Resources"
 	@cp "$(BUILD_DIR)/$(BINARY_NAME)" "$(APP_BUNDLE)/Contents/MacOS/"
 	@cp resources/Info.plist "$(APP_BUNDLE)/Contents/"
+	@test -f resources/AppIcon.icns && cp resources/AppIcon.icns "$(APP_BUNDLE)/Contents/Resources/" || true
 	@codesign --force --deep --sign - "$(APP_BUNDLE)" 2>/dev/null || true
 	@touch "$(APP_BUNDLE)"
 	@echo "Built: $(APP_BUNDLE)"
