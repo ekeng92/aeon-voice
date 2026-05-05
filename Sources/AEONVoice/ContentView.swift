@@ -53,8 +53,11 @@ struct ContentView: View {
                 .padding(.vertical, 10)
             }
         }
-        .frame(width: 340)
-        .frame(maxHeight: 600)
+        // MenuBarExtra popovers size themselves from intrinsic content. A ScrollView
+        // has a weak vertical intrinsic size, so using only maxHeight can collapse
+        // into a tiny squished window on fresh installs. Pin the popover to the
+        // intended panel size and let the ScrollView handle overflow.
+        .frame(width: 360, height: 620)
         .onAppear { testVoiceId = manager.config.defaultVoice }
     }
 
