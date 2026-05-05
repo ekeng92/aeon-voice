@@ -23,6 +23,41 @@ final class VoiceManager: ObservableObject {
         }()
     }
 
+    struct VoiceOption: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let style: String
+        let defaultRate: String
+    }
+
+    struct VoiceConfig: Codable {
+        var defaultVoice: String
+        var defaultRate: String
+        var maxCharacters: Int
+        var muteOnTeams: Bool
+
+        static let `default` = VoiceConfig(
+            defaultVoice: "en-US-AndrewNeural",
+            defaultRate: "",
+            maxCharacters: 500,
+            muteOnTeams: true
+        )
+    }
+
+    // MARK: - Available Voices
+
+    static let availableVoices: [VoiceOption] = [
+        VoiceOption(id: "en-US-AndrewNeural", name: "Andrew", style: "Calm, measured", defaultRate: ""),
+        VoiceOption(id: "en-US-AvaNeural", name: "Ava", style: "Confident, expressive", defaultRate: "+10%"),
+        VoiceOption(id: "en-US-AriaNeural", name: "Aria", style: "Professional, versatile", defaultRate: ""),
+        VoiceOption(id: "en-US-ChristopherNeural", name: "Christopher", style: "Reliable, clear", defaultRate: ""),
+        VoiceOption(id: "en-US-EricNeural", name: "Eric", style: "Conversational, natural", defaultRate: ""),
+        VoiceOption(id: "en-US-GuyNeural", name: "Guy", style: "Casual, friendly", defaultRate: ""),
+        VoiceOption(id: "en-US-JennyNeural", name: "Jenny", style: "Friendly, warm", defaultRate: ""),
+        VoiceOption(id: "en-US-MichelleNeural", name: "Michelle", style: "Warm, engaging", defaultRate: ""),
+        VoiceOption(id: "en-US-SteffanNeural", name: "Steffan", style: "Authoritative, steady", defaultRate: ""),
+    ]
+
     // MARK: - Published State
 
     @Published private(set) var voiceState: VoiceState = .unknown
@@ -32,13 +67,20 @@ final class VoiceManager: ObservableObject {
     @Published private(set) var tempFileCount = 0
     @Published private(set) var activityLog: [LogEntry] = []
     @Published private(set) var keepAwake = false
+    @Published private(set) var teamsCallActive = false
+    @Published var config: VoiceConfig = .default
 
     var isEnabled: Bool { voiceState == .on }
+
+    var currentVoice: VoiceOption? {
+        Self.availableVoices.first { $0.id == config.defaultVoice }
+    }
 
     // MARK: - Private
 
     private let flagPath: String
     private let binPath: String
+    private let configPath: String
     private var fileDescriptor: Int32 = -1
     private var dispatchSource: DispatchSourceFileSystemObject?
     private var refreshTimer: Timer?
@@ -50,15 +92,19 @@ final class VoiceManager: ObservableObject {
         let home = NSHomeDirectory()
         flagPath = "\(home)/.aeon-voice-enabled"
         binPath = "\(home)/.local/bin"
+        configPath = "\(home)/.aeon-voice-config.json"
 
+        loadConfig()
         readFlagFile()
         checkDependencies()
         refreshCounts()
+        checkTeamsCall()
         addLog("AEON Voice started")
 
         startFileMonitor()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.refreshCounts()
+            self?.checkTeamsCall()
         }
     }
 
@@ -75,9 +121,11 @@ final class VoiceManager: ObservableObject {
     // MARK: - Public Actions
 
     func refresh() {
+        loadConfig()
         readFlagFile()
         checkDependencies()
         refreshCounts()
+        checkTeamsCall()
         addLog("Status refreshed")
     }
 
@@ -137,24 +185,78 @@ final class VoiceManager: ObservableObject {
         addLog(count > 0 ? "Cleaned \(count) temp file\(count == 1 ? "" : "s")" : "No temp files")
     }
 
-    func testVoice(_ command: String, label: String, message: String) {
-        let path = "\(binPath)/\(command)"
-        guard FileManager.default.isExecutableFile(atPath: path) else {
-            addLog("\(label) script not found at \(path)")
+    /// Test a voice by edge-tts voice ID. Bypasses mute state so users can preview.
+    func testVoiceById(_ voiceId: String, message: String) {
+        let voice = Self.availableVoices.first { $0.id == voiceId }
+        let name = voice?.name ?? voiceId
+        let rate = voice?.defaultRate ?? ""
+
+        guard pythonAvailable && edgeTTSAvailable else {
+            addLog("Cannot test: edge-tts not available")
             return
         }
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: path)
-        task.arguments = [message]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            let short = message.count > 50 ? String(message.prefix(50)) + "…" : message
-            addLog("Playing \(label): \"\(short)\"")
-        } catch {
-            addLog("Test failed: \(error.localizedDescription)")
+
+        let short = message.count > 50 ? String(message.prefix(50)) + "…" : message
+        addLog("Testing \(name): \"\(short)\"")
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let tmpfile = "/tmp/aeon-voice-test-\(UUID().uuidString).mp3"
+
+            let gen = Process()
+            gen.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            var args = ["python3", "-m", "edge_tts", "--voice", voiceId]
+            if !rate.isEmpty {
+                args += ["--rate", rate]
+            }
+            args += ["--text", message, "--write-media", tmpfile]
+            gen.arguments = args
+            gen.standardOutput = FileHandle.nullDevice
+            gen.standardError = FileHandle.nullDevice
+
+            do {
+                try gen.run()
+                gen.waitUntilExit()
+                guard gen.terminationStatus == 0 else { return }
+
+                let play = Process()
+                play.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+                play.arguments = [tmpfile]
+                play.standardOutput = FileHandle.nullDevice
+                play.standardError = FileHandle.nullDevice
+                try play.run()
+                play.waitUntilExit()
+                try? FileManager.default.removeItem(atPath: tmpfile)
+            } catch {
+                // Test playback is non-critical
+            }
         }
+    }
+
+    // MARK: - Config Management
+
+    func loadConfig() {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let loaded = try? JSONDecoder().decode(VoiceConfig.self, from: data) else {
+            return
+        }
+        config = loaded
+    }
+
+    func saveConfig() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(config) else { return }
+        FileManager.default.createFile(atPath: configPath, contents: data)
+        addLog("Settings saved")
+    }
+
+    func setDefaultVoice(_ voiceId: String) {
+        config.defaultVoice = voiceId
+        if let voice = Self.availableVoices.first(where: { $0.id == voiceId }) {
+            config.defaultRate = voice.defaultRate
+        }
+        saveConfig()
+        addLog("Default voice: \(currentVoice?.name ?? voiceId)")
     }
 
     // MARK: - Private — State Readers
@@ -214,6 +316,30 @@ final class VoiceManager: ObservableObject {
             tempFileCount = items.filter { $0.hasPrefix("aeon-voice-") }.count
         } else {
             tempFileCount = 0
+        }
+    }
+
+    private func checkTeamsCall() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let task = Process()
+            let pipe = Pipe()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            task.arguments = ["-g", "assertions"]
+            task.standardOutput = pipe
+            task.standardError = FileHandle.nullDevice
+
+            do {
+                try task.run()
+                task.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8) ?? ""
+                let active = output.contains("Microsoft Teams Call in progress")
+                DispatchQueue.main.async {
+                    self?.teamsCallActive = active
+                }
+            } catch {
+                // Silently handle
+            }
         }
     }
 

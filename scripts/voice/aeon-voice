@@ -1,0 +1,11 @@
+#!/bin/zsh
+# AEON Voice — Default voice command (configurable via AEON Voice app)
+# Reads voice settings from ~/.aeon-voice-config.json
+# This is the command agents use. The voice is set in the menu bar app.
+
+source "$HOME/.local/bin/aeon-voice-common"
+
+voice="$(read_config_value defaultVoice "en-US-AndrewNeural")"
+rate="$(read_config_value defaultRate "")"
+
+speak_edge_tts "$voice" "$rate" "$1"

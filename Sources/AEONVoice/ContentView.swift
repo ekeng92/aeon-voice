@@ -3,49 +3,59 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var manager: VoiceManager
     @State private var testMessage = "Hello, this is AEON voice."
+    @State private var testVoiceId = "en-US-AndrewNeural"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            statusCard
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                statusCard
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 12)
+
+                // Main toggles
+                HStack(spacing: 8) {
+                    voiceToggle
+                    keepAwakeToggle
+                }
                 .padding(.horizontal, 16)
-                .padding(.top, 16)
                 .padding(.bottom, 12)
 
-            // Main toggles
-            HStack(spacing: 8) {
-                voiceToggle
-                caffeinateToggle
+                Divider().padding(.horizontal, 16)
+
+                settingsSection
+                    .padding(16)
+
+                Divider().padding(.horizontal, 16)
+
+                voiceTest
+                    .padding(16)
+
+                Divider().padding(.horizontal, 16)
+
+                quickActions
+                    .padding(16)
+
+                Divider().padding(.horizontal, 16)
+
+                activitySection
+                    .padding(16)
+
+                Divider()
+
+                Button(action: { NSApp.terminate(nil) }) {
+                    Text("Quit AEON Voice")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 10)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
-
-            Divider().padding(.horizontal, 16)
-
-            quickActions
-                .padding(16)
-
-            Divider().padding(.horizontal, 16)
-
-            voiceTest
-                .padding(16)
-
-            Divider().padding(.horizontal, 16)
-
-            activitySection
-                .padding(16)
-
-            Divider()
-
-            Button(action: { NSApp.terminate(nil) }) {
-                Text("Quit AEON Voice")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 10)
         }
-        .frame(width: 320)
+        .frame(width: 340)
+        .frame(maxHeight: 600)
+        .onAppear { testVoiceId = manager.config.defaultVoice }
     }
 
     // MARK: - Status Card
@@ -71,10 +81,18 @@ struct ContentView: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(.brown)
                         }
+                        if manager.teamsCallActive && manager.config.muteOnTeams {
+                            Image(systemName: "phone.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                        }
                     }
-                    Text(statusSubtitle)
+                    Text("Voice: \(manager.currentVoice?.name ?? "Unknown")")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    Text(statusSubtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                         .lineLimit(2)
                 }
 
@@ -97,6 +115,7 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(.quaternary)
         }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Voice Toggle
@@ -109,32 +128,106 @@ struct ContentView: View {
                 Text(manager.isEnabled ? "Voice On" : "Voice Off")
                     .font(.caption2.weight(.semibold))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(manager.isEnabled ? .black : .white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         }
         .buttonStyle(.borderedProminent)
         .tint(manager.isEnabled ? .green : Color(.systemGray))
         .controlSize(.large)
+        .accessibilityLabel(manager.isEnabled ? "Voice enabled, tap to mute" : "Voice muted, tap to enable")
     }
 
-    // MARK: - Caffeinate Toggle
+    // MARK: - Keep Awake Toggle
 
-    private var caffeinateToggle: some View {
+    private var keepAwakeToggle: some View {
         Button(action: { manager.toggleKeepAwake() }) {
             VStack(spacing: 2) {
                 Image(systemName: manager.keepAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
                     .font(.system(size: 16))
-                Text(manager.keepAwake ? "Caffeinated" : "Caffeinate")
+                Text("Keep Awake")
                     .font(.caption2.weight(.semibold))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(manager.keepAwake ? .black : .white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         }
         .buttonStyle(.borderedProminent)
         .tint(manager.keepAwake ? .brown : Color(.systemGray))
         .controlSize(.large)
+        .help("Prevents system sleep — keeps background processes running even with the lid closed. Uses macOS caffeinate (no sudo required).")
+        .accessibilityLabel(manager.keepAwake ? "Keep awake active, system will not sleep. Tap to disable" : "Keep awake inactive. Tap to prevent system sleep")
+    }
+
+    // MARK: - Settings
+
+    private var settingsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("SETTINGS")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Text("Default Voice")
+                    .font(.caption)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { manager.config.defaultVoice },
+                    set: { manager.setDefaultVoice($0) }
+                )) {
+                    ForEach(VoiceManager.availableVoices) { voice in
+                        Text(voice.name)
+                            .tag(voice.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 150)
+            }
+
+            HStack {
+                Text("Max Characters")
+                    .font(.caption)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { manager.config.maxCharacters },
+                    set: { newValue in
+                        manager.config.maxCharacters = newValue
+                        manager.saveConfig()
+                    }
+                )) {
+                    Text("200").tag(200)
+                    Text("300").tag(300)
+                    Text("500").tag(500)
+                    Text("1000").tag(1000)
+                    Text("No limit").tag(0)
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 150)
+            }
+            .help("Maximum characters an agent can voice in a single message. Longer messages are truncated before TTS generation.")
+
+            HStack {
+                Toggle(isOn: Binding(
+                    get: { manager.config.muteOnTeams },
+                    set: { newValue in
+                        manager.config.muteOnTeams = newValue
+                        manager.saveConfig()
+                    }
+                )) {
+                    HStack(spacing: 4) {
+                        Text("Mute during Teams calls")
+                            .font(.caption)
+                        if manager.teamsCallActive {
+                            Image(systemName: "phone.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+                .toggleStyle(.checkbox)
+            }
+            .help("Automatically suppresses voice output when a Microsoft Teams call is detected via macOS power assertions.")
+        }
     }
 
     // MARK: - Quick Actions
@@ -178,26 +271,23 @@ struct ContentView: View {
                 .font(.caption)
 
             HStack(spacing: 8) {
+                Picker("", selection: $testVoiceId) {
+                    ForEach(VoiceManager.availableVoices) { voice in
+                        Text("\(voice.name) — \(voice.style)")
+                            .tag(voice.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+
                 Button(action: {
-                    manager.testVoice("aeon-prime-voice", label: "Prime", message: testMessage)
+                    manager.testVoiceById(testVoiceId, message: testMessage)
                 }) {
-                    Label("Prime", systemImage: "play.fill")
+                    Label("Play", systemImage: "play.fill")
                         .font(.caption)
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .tint(.blue)
-                .controlSize(.small)
-
-                Button(action: {
-                    manager.testVoice("aeon-dev-voice", label: "Dev", message: testMessage)
-                }) {
-                    Label("Dev", systemImage: "play.fill")
-                        .font(.caption)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(.purple)
                 .controlSize(.small)
             }
         }
@@ -218,22 +308,19 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 8)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(manager.activityLog.prefix(10)) { entry in
-                            HStack(alignment: .top, spacing: 6) {
-                                Text(entry.timeString)
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.tertiary)
-                                Text(entry.message)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(manager.activityLog.prefix(6)) { entry in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text(entry.timeString)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                            Text(entry.message)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 80)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -241,6 +328,9 @@ struct ContentView: View {
     // MARK: - Helpers
 
     private var statusColor: Color {
+        if manager.teamsCallActive && manager.config.muteOnTeams && manager.isEnabled {
+            return .orange
+        }
         switch manager.voiceState {
         case .on:      return .green
         case .off:     return .red
@@ -249,6 +339,9 @@ struct ContentView: View {
     }
 
     private var statusTitle: String {
+        if manager.teamsCallActive && manager.config.muteOnTeams && manager.isEnabled {
+            return "Muted (Teams)"
+        }
         switch manager.voiceState {
         case .on:      return "Voice On"
         case .off:     return "Voice Off"
@@ -257,6 +350,9 @@ struct ContentView: View {
     }
 
     private var statusSubtitle: String {
+        if manager.teamsCallActive && manager.config.muteOnTeams && manager.isEnabled {
+            return "Voice auto-muted — Teams call in progress"
+        }
         switch manager.voiceState {
         case .on:      return "Neural TTS active — audio plays detached from terminals"
         case .off:     return "Voice muted — agents echo in chat only"

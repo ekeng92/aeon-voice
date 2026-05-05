@@ -49,6 +49,7 @@ fi
 # Remove voice scripts
 VOICE_SCRIPTS=(
     aeon-voice-common
+    aeon-voice
     aeon-prime-voice
     aeon-dev-voice
     aeon-voice-toggle
@@ -78,6 +79,13 @@ COPILOT_FILE="$HOME/.copilot/instructions/aeon-voice.instructions.md"
 if [[ -f "$COPILOT_FILE" ]]; then
     rm -f "$COPILOT_FILE"
     ok "Removed Copilot instruction file"
+fi
+
+# Remove config file
+CONFIG_FILE="$HOME/.aeon-voice-config.json"
+if [[ -f "$CONFIG_FILE" ]]; then
+    rm -f "$CONFIG_FILE"
+    ok "Removed config file"
 fi
 
 # Note: we intentionally do NOT remove ~/.aeon-voice-enabled
