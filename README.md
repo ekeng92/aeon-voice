@@ -168,6 +168,12 @@ When enabled (default: on), voice output is automatically suppressed during Micr
 
 This is built to be extensible — future versions can add detection for Zoom, Google Meet, Slack Huddles, and other meeting services.
 
+### Notifications
+
+When enabled, a macOS notification appears whenever voice output fires. This is useful when you step away from your desk — you'll see the notification even if you don't hear the audio. Powered by `osascript`; no additional dependencies or app registration required.
+
+Default: **off**. Enabling it from the Settings panel may prompt macOS to request notification permission for Script Editor on first use.
+
 ### Keep Awake (Caffeinate)
 
 The coffee cup button prevents your Mac from sleeping — useful when you need background processes (like autonomous agents) to keep running with the lid closed. It uses macOS's built-in `caffeinate -s` command, which:
@@ -224,7 +230,7 @@ The `aeon-prime-voice` and `aeon-dev-voice` scripts are still installed for back
           │ reads config + runs scripts
           ▼
 ┌─────────────────────────────────┐
-│  ~/.aeon-voice-config.json      │  ← voice, max chars, auto-mute
+│  ~/.aeon-voice-config.json      │  ← voice, max chars, auto-mute, notifications
 │  ~/.aeon-voice-enabled          │  ← on/off flag
 │  ~/.local/bin/                  │
 │  aeon-voice (default, from cfg) │

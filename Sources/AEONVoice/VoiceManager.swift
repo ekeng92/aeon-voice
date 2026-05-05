@@ -35,13 +35,35 @@ final class VoiceManager: ObservableObject {
         var defaultRate: String
         var maxCharacters: Int
         var muteOnTeams: Bool
+        var showNotifications: Bool
 
         static let `default` = VoiceConfig(
             defaultVoice: "en-US-AndrewNeural",
             defaultRate: "",
             maxCharacters: 500,
-            muteOnTeams: true
+            muteOnTeams: true,
+            showNotifications: false
         )
+
+        // Custom decoder so existing config files that lack newer keys
+        // (e.g. showNotifications) still load cleanly instead of failing.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            defaultVoice      = try c.decodeIfPresent(String.self, forKey: .defaultVoice)      ?? "en-US-AndrewNeural"
+            defaultRate       = try c.decodeIfPresent(String.self, forKey: .defaultRate)       ?? ""
+            maxCharacters     = try c.decodeIfPresent(Int.self,    forKey: .maxCharacters)     ?? 500
+            muteOnTeams       = try c.decodeIfPresent(Bool.self,   forKey: .muteOnTeams)       ?? true
+            showNotifications = try c.decodeIfPresent(Bool.self,   forKey: .showNotifications) ?? false
+        }
+
+        init(defaultVoice: String, defaultRate: String, maxCharacters: Int,
+             muteOnTeams: Bool, showNotifications: Bool) {
+            self.defaultVoice      = defaultVoice
+            self.defaultRate       = defaultRate
+            self.maxCharacters     = maxCharacters
+            self.muteOnTeams       = muteOnTeams
+            self.showNotifications = showNotifications
+        }
     }
 
     // MARK: - Available Voices

@@ -230,6 +230,21 @@ struct ContentView: View {
                 .toggleStyle(.checkbox)
             }
             .help("Automatically suppresses voice output when a Microsoft Teams call is detected via macOS power assertions.")
+
+            HStack {
+                Toggle(isOn: Binding(
+                    get: { manager.config.showNotifications },
+                    set: { newValue in
+                        manager.config.showNotifications = newValue
+                        manager.saveConfig()
+                    }
+                )) {
+                    Text("Show notifications on voice")
+                        .font(.caption)
+                }
+                .toggleStyle(.checkbox)
+            }
+            .help("Shows a macOS notification whenever voice output fires — useful when you step away and might miss a spoken completion or follow-up message.")
         }
     }
 
