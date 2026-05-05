@@ -96,6 +96,11 @@ echo ""
 
 info "Installing app to $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
+if pgrep -x AEONVoice >/dev/null 2>&1; then
+    info "Quitting running AEON Voice before replacing the app..."
+    osascript -e 'quit app "AEON Voice"' >/dev/null 2>&1 || pkill -x AEONVoice 2>/dev/null || true
+    sleep 1
+fi
 rm -rf "$INSTALL_DIR/$APP_NAME.app"
 cp -R "build/$APP_NAME.app" "$INSTALL_DIR/"
 if [[ -f "$PROJECT_DIR/resources/AppIcon.icns" ]]; then
