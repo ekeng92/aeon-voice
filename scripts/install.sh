@@ -104,6 +104,7 @@ if [[ -f "$PROJECT_DIR/resources/AppIcon.icns" ]]; then
 fi
 codesign --force --deep --sign - "$INSTALL_DIR/$APP_NAME.app" 2>/dev/null || true
 touch "$INSTALL_DIR/$APP_NAME.app"
+rm -rf "$PROJECT_DIR/build" 2>/dev/null || true
 ok "App installed: $INSTALL_DIR/$APP_NAME.app"
 
 # ── Step 7: Install voice scripts ─────────────────────────────────────
