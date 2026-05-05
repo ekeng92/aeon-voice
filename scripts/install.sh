@@ -87,7 +87,7 @@ fi
 
 # ── Step 5: Build the app ─────────────────────────────────────────────
 
-info "Building AEON Voice..."
+info "Building AEON Voice (compiling from source — this takes 1–2 minutes)..."
 cd "$PROJECT_DIR"
 make app
 echo ""
