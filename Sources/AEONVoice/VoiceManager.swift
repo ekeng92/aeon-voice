@@ -23,6 +23,32 @@ final class VoiceManager: ObservableObject {
         }()
     }
 
+    struct NotificationEntry: Identifiable {
+        let id = UUID()
+        let timestamp: Date
+        let message: String
+
+        var timeString: String {
+            if Calendar.current.isDateInToday(timestamp) {
+                return Self.timeFormatter.string(from: timestamp)
+            } else {
+                return Self.dateTimeFormatter.string(from: timestamp)
+            }
+        }
+
+        private static let timeFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm"
+            return f
+        }()
+
+        private static let dateTimeFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "MMM d HH:mm"
+            return f
+        }()
+    }
+
     struct VoiceOption: Identifiable, Hashable {
         let id: String
         let name: String
@@ -91,6 +117,7 @@ final class VoiceManager: ObservableObject {
     @Published private(set) var keepAwake = false
     @Published private(set) var teamsCallActive = false
     @Published var config: VoiceConfig = .default
+    @Published private(set) var recentNotifications: [NotificationEntry] = []
 
     var isEnabled: Bool { voiceState == .on }
 
@@ -104,11 +131,13 @@ final class VoiceManager: ObservableObject {
     private let binPath: String
     private let configPath: String
     private let pythonPathFile: String
+    private let notificationsPath: String
     private var pythonExecutable: String?
     private var fileDescriptor: Int32 = -1
     private var dispatchSource: DispatchSourceFileSystemObject?
     private var refreshTimer: Timer?
     private var caffeinateProcess: Process?
+    private var notificationsLastModified: Date?
 
     // MARK: - Init / Deinit
 
@@ -118,18 +147,21 @@ final class VoiceManager: ObservableObject {
         binPath = "\(home)/.local/bin"
         configPath = "\(home)/.aeon-voice-config.json"
         pythonPathFile = "\(home)/.aeon-voice-python"
+        notificationsPath = "\(home)/.aeon-voice-notifications.jsonl"
 
         loadConfig()
         readFlagFile()
         checkDependencies()
         refreshCounts()
         checkTeamsCall()
+        loadNotifications()
         addLog("AEON Voice started")
 
         startFileMonitor()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.refreshCounts()
             self?.checkTeamsCall()
+            self?.loadNotifications()
         }
     }
 
@@ -195,6 +227,13 @@ final class VoiceManager: ObservableObject {
         task.waitUntilExit()
         refreshCounts()
         addLog(task.terminationStatus == 0 ? "Audio stopped" : "No audio playing")
+    }
+
+    func clearNotifications() {
+        try? FileManager.default.removeItem(atPath: notificationsPath)
+        recentNotifications = []
+        notificationsLastModified = nil
+        addLog("Notifications cleared")
     }
 
     func cleanTemp() {
@@ -454,6 +493,37 @@ final class VoiceManager: ObservableObject {
                 // Silently handle
             }
         }
+    }
+
+    private func loadNotifications() {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: notificationsPath) else {
+            if !recentNotifications.isEmpty { recentNotifications = [] }
+            return
+        }
+
+        // Only reload when file has changed
+        guard let attrs = try? fm.attributesOfItem(atPath: notificationsPath),
+              let modDate = attrs[.modificationDate] as? Date,
+              modDate != notificationsLastModified else { return }
+        notificationsLastModified = modDate
+
+        guard let data = fm.contents(atPath: notificationsPath),
+              let content = String(data: data, encoding: .utf8) else { return }
+
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
+        let isoFormatter = ISO8601DateFormatter()
+
+        var entries: [NotificationEntry] = []
+        for line in lines.suffix(50) {
+            guard let lineData = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let ts = json["ts"] as? String,
+                  let msg = json["msg"] as? String else { continue }
+            let date = isoFormatter.date(from: ts) ?? Date()
+            entries.append(NotificationEntry(timestamp: date, message: msg))
+        }
+        recentNotifications = entries.reversed()  // Newest first
     }
 
     // MARK: - Private — Script Runner
