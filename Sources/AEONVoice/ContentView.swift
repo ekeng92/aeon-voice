@@ -41,6 +41,13 @@ struct ContentView: View {
                 activitySection
                     .padding(16)
 
+                if manager.config.showNotifications {
+                    Divider().padding(.horizontal, 16)
+
+                    notificationsSection
+                        .padding(16)
+                }
+
                 Divider()
 
                 Button(action: { NSApp.terminate(nil) }) {
@@ -345,6 +352,51 @@ struct ContentView: View {
                             Text(entry.message)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    // MARK: - Recent Notifications
+
+    private var notificationsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("RECENT NOTIFICATIONS")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if !manager.recentNotifications.isEmpty {
+                    Button(action: { manager.clearNotifications() }) {
+                        Text("Clear")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if manager.recentNotifications.isEmpty {
+                Text("No notifications yet")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(manager.recentNotifications.prefix(10)) { entry in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text(entry.timeString)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                                .frame(minWidth: 40, alignment: .leading)
+                            Text(entry.message)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
                         }
                     }
                 }

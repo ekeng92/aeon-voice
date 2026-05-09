@@ -93,6 +93,17 @@ maybe_notify() {
   local notify_enabled
   notify_enabled="$(read_config_value showNotifications false)"
   [[ "$notify_enabled" == "true" ]] || return 0
+
+  # Append to notification log (JSONL) — the menu bar app watches this file
+  python3 -c '
+import json, sys, os, time
+entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "msg": sys.argv[1]}
+path = os.path.expanduser("~/.aeon-voice-notifications.jsonl")
+with open(path, "a") as f:
+    f.write(json.dumps(entry) + "\n")
+' "$message" 2>/dev/null || true
+
+  # Show macOS system notification
   /usr/bin/osascript - "$message" >/dev/null 2>&1 <<'APPLESCRIPT' || true
 on run argv
   display notification (item 1 of argv) with title "AEON Voice"
