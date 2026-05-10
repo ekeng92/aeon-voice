@@ -118,12 +118,25 @@ final class VoiceManager: ObservableObject {
     @Published private(set) var teamsCallActive = false
     @Published var config: VoiceConfig = .default
     @Published private(set) var recentNotifications: [NotificationEntry] = []
+    @Published private(set) var updateState: UpdateState = .idle
+    @Published private(set) var latestRemoteSHA: String?
+
+    enum UpdateState: Equatable {
+        case idle
+        case checking
+        case updateAvailable(String)
+        case upToDate
+        case updating
+        case failed(String)
+    }
 
     var isEnabled: Bool { voiceState == .on }
 
     var currentVoice: VoiceOption? {
         Self.availableVoices.first { $0.id == config.defaultVoice }
     }
+
+    var buildCommit: String { BuildInfo.commitSHA }
 
     // MARK: - Private
 
@@ -549,6 +562,99 @@ final class VoiceManager: ObservableObject {
                 completion(output)
             } catch {
                 completion("Error: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // MARK: - Update
+
+    private static let githubAPIURL = "https://api.github.com/repos/ekeng92/aeon-voice/commits/main"
+    private static let remoteInstallURL = "https://raw.githubusercontent.com/ekeng92/aeon-voice/main/scripts/remote-install.sh"
+
+    func checkForUpdate() {
+        updateState = .checking
+        addLog("Checking for updates...")
+
+        guard let url = URL(string: Self.githubAPIURL) else {
+            updateState = .failed("Invalid URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
+        // Only fetch the SHA, minimal payload
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+
+                if let error = error {
+                    self.updateState = .failed(error.localizedDescription)
+                    self.addLog("Update check failed: \(error.localizedDescription)")
+                    return
+                }
+
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let sha = json["sha"] as? String else {
+                    self.updateState = .failed("Could not parse response")
+                    self.addLog("Update check failed: bad response")
+                    return
+                }
+
+                let remoteSHA = String(sha.prefix(7))
+                self.latestRemoteSHA = remoteSHA
+
+                if self.buildCommit == "dev" {
+                    // Dev build, can't compare
+                    self.updateState = .updateAvailable(remoteSHA)
+                    self.addLog("Dev build, latest: \(remoteSHA)")
+                } else if remoteSHA == self.buildCommit {
+                    self.updateState = .upToDate
+                    self.addLog("Up to date (\(remoteSHA))")
+                } else {
+                    self.updateState = .updateAvailable(remoteSHA)
+                    self.addLog("Update available: \(remoteSHA)")
+                }
+            }
+        }.resume()
+    }
+
+    func runUpdate() {
+        updateState = .updating
+        addLog("Downloading and installing update...")
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/bin/bash")
+            task.arguments = [
+                "-c",
+                "curl -fsSL '\(Self.remoteInstallURL)' | bash -s -- --non-interactive"
+            ]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+
+            do {
+                try task.run()
+                task.waitUntilExit()
+                let status = task.terminationStatus
+
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    if status == 0 {
+                        self.addLog("Update installed. Restart the app to use the new version.")
+                        self.updateState = .upToDate
+                    } else {
+                        self.updateState = .failed("Install exited with code \(status)")
+                        self.addLog("Update failed (exit \(status))")
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.updateState = .failed(error.localizedDescription)
+                    self?.addLog("Update failed: \(error.localizedDescription)")
+                }
             }
         }
     }

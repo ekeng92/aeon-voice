@@ -20,6 +20,14 @@ LAUNCH_AGENT_DIR="$AEON_HOME/Library/LaunchAgents"
 LAUNCH_AGENT_ID="com.aeon.voice"
 LAUNCH_AGENT_PLIST="$LAUNCH_AGENT_DIR/$LAUNCH_AGENT_ID.plist"
 
+# Parse flags
+NON_INTERACTIVE=false
+for arg in "$@"; do
+    case "$arg" in
+        --non-interactive) NON_INTERACTIVE=true ;;
+    esac
+done
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -173,6 +181,8 @@ fi
 if [[ -n "${AEON_PREFIX:-}" ]]; then
     info "Skipping LaunchAgent (dry-run mode)"
     REPLY="n"
+elif [[ "$NON_INTERACTIVE" == "true" ]]; then
+    REPLY="y"
 else
     echo ""
     read -p "  Start AEON Voice automatically on login? [y/N] " -n 1 -r < /dev/tty
@@ -224,29 +234,42 @@ echo "  You can edit it anytime to customize voice behavior."
 echo ""
 
 if [[ -f "$COPILOT_FILE" ]]; then
-    warn "Copilot instruction file already exists at $COPILOT_FILE"
-    read -p "  Overwrite with latest version? [y/N] " -n 1 -r < /dev/tty
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$NON_INTERACTIVE" == "true" ]]; then
         cp "$SOURCE_INSTRUCTION" "$COPILOT_FILE"
         ok "Copilot instruction file updated"
-        OPEN_INSTRUCTION=true
-    else
-        info "Kept existing instruction file"
         OPEN_INSTRUCTION=false
+    else
+        warn "Copilot instruction file already exists at $COPILOT_FILE"
+        read -p "  Overwrite with latest version? [y/N] " -n 1 -r < /dev/tty
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            cp "$SOURCE_INSTRUCTION" "$COPILOT_FILE"
+            ok "Copilot instruction file updated"
+            OPEN_INSTRUCTION=true
+        else
+            info "Kept existing instruction file"
+            OPEN_INSTRUCTION=false
+        fi
     fi
 else
-    read -p "  Enable AI agent voice in VS Code? [Y/n] " -n 1 -r < /dev/tty
-    echo ""
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    if [[ "$NON_INTERACTIVE" == "true" ]]; then
         mkdir -p "$COPILOT_DIR"
         cp "$SOURCE_INSTRUCTION" "$COPILOT_FILE"
         ok "Copilot instruction file installed"
-        OPEN_INSTRUCTION=true
-    else
-        info "Skipped Copilot integration. You can add it later:"
-        echo "    cp examples/aeon-voice.instructions.md ~/.copilot/instructions/"
         OPEN_INSTRUCTION=false
+    else
+        read -p "  Enable AI agent voice in VS Code? [Y/n] " -n 1 -r < /dev/tty
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            mkdir -p "$COPILOT_DIR"
+            cp "$SOURCE_INSTRUCTION" "$COPILOT_FILE"
+            ok "Copilot instruction file installed"
+            OPEN_INSTRUCTION=true
+        else
+            info "Skipped Copilot integration. You can add it later:"
+            echo "    cp examples/aeon-voice.instructions.md ~/.copilot/instructions/"
+            OPEN_INSTRUCTION=false
+        fi
     fi
 fi
 
