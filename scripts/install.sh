@@ -209,6 +209,8 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 </dict>
 </plist>
 PLIST
+    killall AEONVoice 2>/dev/null || true
+    sleep 1
     launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT_PLIST" 2>/dev/null || true
     launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT_PLIST"
     ok "LaunchAgent installed — AEON Voice will start on login"
