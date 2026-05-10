@@ -90,6 +90,8 @@ apply_max_chars() {
 # Fails silently — notification errors never block voice output.
 maybe_notify() {
   local message="$1"
+  local session="${2:-}"
+  local prompt="${3:-}"
   local notify_enabled
   notify_enabled="$(read_config_value showNotifications false)"
   [[ "$notify_enabled" == "true" ]] || return 0
@@ -99,16 +101,22 @@ maybe_notify() {
   python3 -c '
 import json, sys, os, time
 entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "msg": sys.argv[1]}
+if len(sys.argv) > 2 and sys.argv[2]:
+    entry["session"] = sys.argv[2]
+if len(sys.argv) > 3 and sys.argv[3]:
+    entry["prompt"] = sys.argv[3]
 path = os.path.expanduser("~/.aeon-voice-notifications.jsonl")
 with open(path, "a") as f:
     f.write(json.dumps(entry) + "\n")
-' "$message" 2>/dev/null || true
+' "$message" "$session" "$prompt" 2>/dev/null || true
 }
 
 speak_edge_tts() {
   local voice="$1"
   local rate="$2"
   local message="$3"
+  local session="${4:-}"
+  local prompt="${5:-}"
 
   [[ -n "$message" ]] || return 0
   voice_enabled || return 0
@@ -143,7 +151,7 @@ speak_edge_tts() {
     fi
 
     if [[ -s "$tmpfile" ]]; then
-      maybe_notify "$message"
+      maybe_notify "$message" "$session" "$prompt"
       /usr/bin/afplay "$tmpfile" >/dev/null 2>&1
     fi
 

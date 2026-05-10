@@ -398,10 +398,24 @@ struct ContentView: View {
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(.tertiary)
                                 .frame(minWidth: 40, alignment: .leading)
-                            Text(entry.message)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                            VStack(alignment: .leading, spacing: 1) {
+                                if let session = entry.session {
+                                    Text(session)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.primary.opacity(0.7))
+                                }
+                                if let prompt = entry.prompt {
+                                    Text("Re: \(prompt)")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                                Text(entry.message)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
                     }
                 }
