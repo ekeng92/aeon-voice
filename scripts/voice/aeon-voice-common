@@ -55,7 +55,7 @@ teams_call_active() {
 
 edge_tts_available() {
   command -v python3 >/dev/null 2>&1 || return 1
-  python3 -m edge_tts --help >/dev/null 2>&1
+  python3 -c "import edge_tts" >/dev/null 2>&1
 }
 
 # Read a value from the JSON config file.
@@ -140,21 +140,75 @@ speak_edge_tts() {
     # Clean up stale temp files from prior interrupted runs (older than 2 min)
     find /tmp -name 'aeon-voice-*' -mmin +2 -delete 2>/dev/null || true
 
-    local tmpbase
-    tmpbase="$(mktemp /tmp/aeon-voice-XXXXXX)"
-    local tmpfile="${tmpbase}.mp3"
+    # Determine notification config once
+    local notify_enabled
+    notify_enabled="$(read_config_value showNotifications false)"
 
-    if [[ -n "$rate" ]]; then
-      python3 -m edge_tts --voice "$voice" --rate "$rate" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
+    # Streaming path: pipe TTS audio chunks directly to ffplay for faster
+    # first-audio (~0.6s vs ~2s). Falls back to file-based afplay if ffplay
+    # is not installed.
+    if command -v ffplay >/dev/null 2>&1; then
+      python3 - "$voice" "$rate" "$message" "$notify_enabled" "$session" "$prompt" << 'PYEOF'
+import asyncio, subprocess, sys, os, json, time
+import edge_tts
+
+async def main():
+    voice, rate, message = sys.argv[1], sys.argv[2], sys.argv[3]
+    notify = sys.argv[4] == "true"
+    session = sys.argv[5] if len(sys.argv) > 5 else ""
+    prompt = sys.argv[6] if len(sys.argv) > 6 else ""
+
+    kwargs = {}
+    if rate:
+        kwargs["rate"] = rate
+    communicate = edge_tts.Communicate(message, voice, **kwargs)
+
+    proc = subprocess.Popen(
+        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-"],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    has_audio = False
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            has_audio = True
+            try:
+                proc.stdin.write(chunk["data"])
+            except BrokenPipeError:
+                break
+    proc.stdin.close()
+
+    if has_audio and notify:
+        entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "msg": message}
+        if session:
+            entry["session"] = session
+        if prompt:
+            entry["prompt"] = prompt
+        path = os.path.expanduser("~/.aeon-voice-notifications.jsonl")
+        with open(path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+
+    proc.wait()
+
+asyncio.run(main())
+PYEOF
     else
-      python3 -m edge_tts --voice "$voice" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
-    fi
+      # Fallback: file-based generation + afplay
+      local tmpbase
+      tmpbase="$(mktemp /tmp/aeon-voice-XXXXXX)"
+      local tmpfile="${tmpbase}.mp3"
 
-    if [[ -s "$tmpfile" ]]; then
-      maybe_notify "$message" "$session" "$prompt"
-      /usr/bin/afplay "$tmpfile" >/dev/null 2>&1
-    fi
+      if [[ -n "$rate" ]]; then
+        python3 -m edge_tts --voice "$voice" --rate "$rate" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
+      else
+        python3 -m edge_tts --voice "$voice" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
+      fi
 
-    rm -f "$tmpfile" "$tmpbase"
+      if [[ -s "$tmpfile" ]]; then
+        maybe_notify "$message" "$session" "$prompt"
+        /usr/bin/afplay "$tmpfile" >/dev/null 2>&1
+      fi
+
+      rm -f "$tmpfile" "$tmpbase"
+    fi
   ) &!
 }
