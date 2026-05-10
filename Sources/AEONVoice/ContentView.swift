@@ -38,6 +38,11 @@ struct ContentView: View {
 
                 Divider().padding(.horizontal, 16)
 
+                updateSection
+                    .padding(16)
+
+                Divider().padding(.horizontal, 16)
+
                 activitySection
                     .padding(16)
 
@@ -64,7 +69,7 @@ struct ContentView: View {
         // has a weak vertical intrinsic size, so using only maxHeight can collapse
         // into a tiny squished window on fresh installs. Pin the popover to the
         // intended panel size and let the ScrollView handle overflow.
-        .frame(width: 360, height: 620)
+        .frame(width: 360, height: 680)
         .onAppear { testVoiceId = manager.config.defaultVoice }
     }
 
@@ -401,6 +406,95 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    // MARK: - Update
+
+    private var updateSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("UPDATE")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("Build: \(manager.buildCommit)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+
+            switch manager.updateState {
+            case .idle:
+                actionButton("Check for Updates", icon: "arrow.triangle.2.circlepath", tint: .blue) {
+                    manager.checkForUpdate()
+                }
+            case .checking:
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Checking...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 4)
+            case .upToDate:
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Up to date")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(action: { manager.checkForUpdate() }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+            case .updateAvailable(let sha):
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Update available (\(sha))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    actionButton("Install Update", icon: "arrow.down.to.line", tint: .orange) {
+                        manager.runUpdate()
+                    }
+                }
+            case .updating:
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Installing update...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 4)
+            case .failed(let msg):
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.red)
+                        Text(msg)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    actionButton("Retry", icon: "arrow.triangle.2.circlepath", tint: .blue) {
+                        manager.checkForUpdate()
+                    }
+                }
             }
         }
     }
