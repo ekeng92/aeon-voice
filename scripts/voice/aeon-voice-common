@@ -133,22 +133,35 @@ speak_edge_tts() {
 
   edge_tts_available || return 0
 
-  # Fully detach TTS generation + playback + cleanup into its own process.
+  local lock_file="$HOME/.aeon-voice-queue.lock"
+
+  # Fully detach TTS generation + playback into its own process.
   # &! (zsh: background + disown) makes it immune to terminal death —
   # the voice plays to completion even if the calling terminal is killed.
+  #
+  # lockf serializes concurrent voices into a FIFO queue. Each detached
+  # process waits for the lock before generating + playing, so multiple
+  # agents never talk over each other. Timeout of 120s prevents a hung
+  # process from blocking the queue forever.
   (
     # Clean up stale temp files from prior interrupted runs (older than 2 min)
     find /tmp -name 'aeon-voice-*' -mmin +2 -delete 2>/dev/null || true
 
-    # Determine notification config once
+    # Determine notification config once (outside lock — no contention)
     local notify_enabled
     notify_enabled="$(read_config_value showNotifications false)"
 
-    # Streaming path: pipe TTS audio chunks directly to ffplay for faster
-    # first-audio (~0.6s vs ~2s). Falls back to file-based afplay if ffplay
-    # is not installed.
+    # Write the TTS+playback script to a temp file so lockf can execute it.
+    # lockf needs a command to run; heredocs can't be passed directly.
+    local play_script
+    play_script="$(mktemp /tmp/aeon-voice-play-XXXXXX.sh)"
+    chmod +x "$play_script"
+
     if command -v ffplay >/dev/null 2>&1; then
-      python3 - "$voice" "$rate" "$message" "$notify_enabled" "$session" "$prompt" << 'PYEOF'
+      # Streaming path: pipe TTS audio chunks directly to ffplay
+      cat > "$play_script" << 'PYEOF_WRAPPER'
+#!/bin/zsh
+exec python3 - "$@" << 'PYEOF'
 import asyncio, subprocess, sys, os, json, time
 import edge_tts
 
@@ -191,24 +204,44 @@ async def main():
 
 asyncio.run(main())
 PYEOF
+PYEOF_WRAPPER
+
+      lockf -k -t 120 "$lock_file" "$play_script" "$voice" "$rate" "$message" "$notify_enabled" "$session" "$prompt"
     else
-      # Fallback: file-based generation + afplay
-      local tmpbase
-      tmpbase="$(mktemp /tmp/aeon-voice-XXXXXX)"
-      local tmpfile="${tmpbase}.mp3"
+      # Fallback: file-based generation + afplay (also queued)
+      cat > "$play_script" << 'FALLBACK_WRAPPER'
+#!/bin/zsh
+voice="$1"; rate="$2"; message="$3"; notify_enabled="$4"; session="$5"; prompt="$6"
 
-      if [[ -n "$rate" ]]; then
-        python3 -m edge_tts --voice "$voice" --rate "$rate" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
-      else
-        python3 -m edge_tts --voice "$voice" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
-      fi
+tmpbase="$(mktemp /tmp/aeon-voice-XXXXXX)"
+tmpfile="${tmpbase}.mp3"
 
-      if [[ -s "$tmpfile" ]]; then
-        maybe_notify "$message" "$session" "$prompt"
-        /usr/bin/afplay "$tmpfile" >/dev/null 2>&1
-      fi
+if [[ -n "$rate" ]]; then
+  python3 -m edge_tts --voice "$voice" --rate "$rate" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
+else
+  python3 -m edge_tts --voice "$voice" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
+fi
 
-      rm -f "$tmpfile" "$tmpbase"
+if [[ -s "$tmpfile" ]]; then
+  if [[ "$notify_enabled" == "true" ]]; then
+    python3 -c '
+import json, sys, os, time
+entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "msg": sys.argv[1]}
+if len(sys.argv) > 2 and sys.argv[2]: entry["session"] = sys.argv[2]
+if len(sys.argv) > 3 and sys.argv[3]: entry["prompt"] = sys.argv[3]
+path = os.path.expanduser("~/.aeon-voice-notifications.jsonl")
+with open(path, "a") as f: f.write(json.dumps(entry) + "\n")
+' "$message" "$session" "$prompt" 2>/dev/null || true
+  fi
+  /usr/bin/afplay "$tmpfile" >/dev/null 2>&1
+fi
+
+rm -f "$tmpfile" "$tmpbase"
+FALLBACK_WRAPPER
+
+      lockf -k -t 120 "$lock_file" "$play_script" "$voice" "$rate" "$message" "$notify_enabled" "$session" "$prompt"
     fi
+
+    rm -f "$play_script"
   ) &!
 }
