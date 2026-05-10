@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import UserNotifications
 
 final class VoiceManager: ObservableObject {
 
@@ -519,6 +520,9 @@ final class VoiceManager: ObservableObject {
         guard let attrs = try? fm.attributesOfItem(atPath: notificationsPath),
               let modDate = attrs[.modificationDate] as? Date,
               modDate != notificationsLastModified else { return }
+
+        let previousCount = recentNotifications.count
+        let isFirstLoad = notificationsLastModified == nil
         notificationsLastModified = modDate
 
         guard let data = fm.contents(atPath: notificationsPath),
@@ -536,7 +540,31 @@ final class VoiceManager: ObservableObject {
             let date = isoFormatter.date(from: ts) ?? Date()
             entries.append(NotificationEntry(timestamp: date, message: msg))
         }
-        recentNotifications = entries.reversed()  // Newest first
+        let reversed = entries.reversed() as ReversedCollection
+        let newEntries = Array(reversed)
+        recentNotifications = newEntries
+
+        // Post native notifications for genuinely new entries (not on first load)
+        if config.showNotifications && !isFirstLoad && newEntries.count > previousCount {
+            let newCount = newEntries.count - previousCount
+            for entry in newEntries.prefix(newCount) {
+                postNativeNotification(entry.message)
+            }
+        }
+    }
+
+    private func postNativeNotification(_ message: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "AEON Voice"
+        content.body = message
+        content.sound = nil  // Voice is already playing, no need for notification sound
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil  // Deliver immediately
+        )
+        UNUserNotificationCenter.current().add(request) { _ in }
     }
 
     // MARK: - Private — Script Runner
