@@ -65,33 +65,37 @@ final class VoiceManager: ObservableObject {
         var maxCharacters: Int
         var muteOnTeams: Bool
         var showNotifications: Bool
+        var showUpdateNotifications: Bool
 
         static let `default` = VoiceConfig(
             defaultVoice: "en-US-AndrewNeural",
             defaultRate: "",
             maxCharacters: 500,
             muteOnTeams: true,
-            showNotifications: false
+            showNotifications: false,
+            showUpdateNotifications: true
         )
 
         // Custom decoder so existing config files that lack newer keys
         // (e.g. showNotifications) still load cleanly instead of failing.
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            defaultVoice      = try c.decodeIfPresent(String.self, forKey: .defaultVoice)      ?? "en-US-AndrewNeural"
-            defaultRate       = try c.decodeIfPresent(String.self, forKey: .defaultRate)       ?? ""
-            maxCharacters     = try c.decodeIfPresent(Int.self,    forKey: .maxCharacters)     ?? 500
-            muteOnTeams       = try c.decodeIfPresent(Bool.self,   forKey: .muteOnTeams)       ?? true
-            showNotifications = try c.decodeIfPresent(Bool.self,   forKey: .showNotifications) ?? false
+            defaultVoice              = try c.decodeIfPresent(String.self, forKey: .defaultVoice)              ?? "en-US-AndrewNeural"
+            defaultRate               = try c.decodeIfPresent(String.self, forKey: .defaultRate)               ?? ""
+            maxCharacters             = try c.decodeIfPresent(Int.self,    forKey: .maxCharacters)             ?? 500
+            muteOnTeams               = try c.decodeIfPresent(Bool.self,   forKey: .muteOnTeams)               ?? true
+            showNotifications         = try c.decodeIfPresent(Bool.self,   forKey: .showNotifications)         ?? false
+            showUpdateNotifications   = try c.decodeIfPresent(Bool.self,   forKey: .showUpdateNotifications)   ?? true
         }
 
         init(defaultVoice: String, defaultRate: String, maxCharacters: Int,
-             muteOnTeams: Bool, showNotifications: Bool) {
-            self.defaultVoice      = defaultVoice
-            self.defaultRate       = defaultRate
-            self.maxCharacters     = maxCharacters
-            self.muteOnTeams       = muteOnTeams
-            self.showNotifications = showNotifications
+             muteOnTeams: Bool, showNotifications: Bool, showUpdateNotifications: Bool = true) {
+            self.defaultVoice              = defaultVoice
+            self.defaultRate               = defaultRate
+            self.maxCharacters             = maxCharacters
+            self.muteOnTeams               = muteOnTeams
+            self.showNotifications         = showNotifications
+            self.showUpdateNotifications   = showUpdateNotifications
         }
     }
 
@@ -156,6 +160,8 @@ final class VoiceManager: ObservableObject {
     private var notificationsLastModified: Date?
     private var notificationsTotalLines: Int = 0
     private let notificationDelegate = NotificationDelegate()
+    private var lastUpdateCheckTime: Date?
+    private var lastNotifiedUpdateSHA: String?
 
     // MARK: - Init / Deinit
 
@@ -185,6 +191,12 @@ final class VoiceManager: ObservableObject {
             self?.refreshCounts()
             self?.checkTeamsCall()
             self?.loadNotifications()
+            self?.autoCheckForUpdate()
+        }
+
+        // Run initial update check shortly after launch
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            self?.autoCheckForUpdate()
         }
     }
 
@@ -707,6 +719,82 @@ final class VoiceManager: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Auto Update Check
+
+    private static let updateCheckInterval: TimeInterval = 30 * 60 // 30 minutes
+
+    private func autoCheckForUpdate() {
+        // Skip if already checking or updating
+        if case .checking = updateState { return }
+        if case .updating = updateState { return }
+
+        // Throttle: only check every 30 minutes
+        if let last = lastUpdateCheckTime, Date().timeIntervalSince(last) < Self.updateCheckInterval {
+            return
+        }
+
+        lastUpdateCheckTime = Date()
+
+        guard let url = URL(string: Self.githubAPIURL) else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                guard error == nil,
+                      let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let sha = json["sha"] as? String else { return }
+
+                let remoteSHA = String(sha.prefix(7))
+                self.latestRemoteSHA = remoteSHA
+
+                let isNewer: Bool
+                if self.buildCommit == "dev" {
+                    isNewer = true
+                } else {
+                    isNewer = remoteSHA != self.buildCommit
+                }
+
+                if isNewer {
+                    self.updateState = .updateAvailable(remoteSHA)
+
+                    // Post a one-time native notification if enabled and not already notified for this SHA
+                    if self.config.showUpdateNotifications && self.lastNotifiedUpdateSHA != remoteSHA {
+                        self.lastNotifiedUpdateSHA = remoteSHA
+                        self.postUpdateNotification(sha: remoteSHA)
+                    }
+                } else {
+                    self.updateState = .upToDate
+                }
+            }
+        }.resume()
+    }
+
+    private func postUpdateNotification(sha: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "AEON Voice Update Available"
+        content.body = "A new version (\(sha)) is available. Open the app to install."
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "update-available-\(sha)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                DispatchQueue.main.async { [weak self] in
+                    self?.addLog("Update notification error: \(error.localizedDescription)")
+                }
+            }
+        }
+        addLog("Update notification sent for \(sha)")
     }
 
     // MARK: - Private — Activity Log

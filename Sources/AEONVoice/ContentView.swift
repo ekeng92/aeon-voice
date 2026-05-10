@@ -251,12 +251,27 @@ struct ContentView: View {
                         manager.saveConfig()
                     }
                 )) {
-                    Text("Show notifications on voice")
+                    Text("Notify on voice output")
                         .font(.caption)
                 }
                 .toggleStyle(.checkbox)
             }
             .help("Shows a macOS notification whenever voice output fires — useful when you step away and might miss a spoken completion or follow-up message.")
+
+            HStack {
+                Toggle(isOn: Binding(
+                    get: { manager.config.showUpdateNotifications },
+                    set: { newValue in
+                        manager.config.showUpdateNotifications = newValue
+                        manager.saveConfig()
+                    }
+                )) {
+                    Text("Notify on updates available")
+                        .font(.caption)
+                }
+                .toggleStyle(.checkbox)
+            }
+            .help("Shows a one-time macOS notification when a new version of AEON Voice is available on GitHub. Checks automatically every 30 minutes.")
         }
     }
 
