@@ -28,6 +28,8 @@ final class VoiceManager: ObservableObject {
         let id = UUID()
         let timestamp: Date
         let message: String
+        let session: String?
+        let prompt: String?
 
         var timeString: String {
             if Calendar.current.isDateInToday(timestamp) {
@@ -152,6 +154,8 @@ final class VoiceManager: ObservableObject {
     private var refreshTimer: Timer?
     private var caffeinateProcess: Process?
     private var notificationsLastModified: Date?
+    private var notificationsTotalLines: Int = 0
+    private let notificationDelegate = NotificationDelegate()
 
     // MARK: - Init / Deinit
 
@@ -162,6 +166,11 @@ final class VoiceManager: ObservableObject {
         configPath = "\(home)/.aeon-voice-config.json"
         pythonPathFile = "\(home)/.aeon-voice-python"
         notificationsPath = "\(home)/.aeon-voice-notifications.jsonl"
+
+        // Set up native notifications — must be in a class so the weak delegate ref persists
+        let center = UNUserNotificationCenter.current()
+        center.delegate = notificationDelegate
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
         loadConfig()
         readFlagFile()
@@ -247,6 +256,7 @@ final class VoiceManager: ObservableObject {
         try? FileManager.default.removeItem(atPath: notificationsPath)
         recentNotifications = []
         notificationsLastModified = nil
+        notificationsTotalLines = 0
         addLog("Notifications cleared")
     }
 
@@ -521,7 +531,7 @@ final class VoiceManager: ObservableObject {
               let modDate = attrs[.modificationDate] as? Date,
               modDate != notificationsLastModified else { return }
 
-        let previousCount = recentNotifications.count
+        let previousTotalLines = notificationsTotalLines
         let isFirstLoad = notificationsLastModified == nil
         notificationsLastModified = modDate
 
@@ -529,6 +539,7 @@ final class VoiceManager: ObservableObject {
               let content = String(data: data, encoding: .utf8) else { return }
 
         let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
+        notificationsTotalLines = lines.count
         let isoFormatter = ISO8601DateFormatter()
 
         var entries: [NotificationEntry] = []
@@ -538,25 +549,30 @@ final class VoiceManager: ObservableObject {
                   let ts = json["ts"] as? String,
                   let msg = json["msg"] as? String else { continue }
             let date = isoFormatter.date(from: ts) ?? Date()
-            entries.append(NotificationEntry(timestamp: date, message: msg))
+            let session = json["session"] as? String
+            let prompt = json["prompt"] as? String
+            entries.append(NotificationEntry(timestamp: date, message: msg, session: session, prompt: prompt))
         }
         let reversed = entries.reversed() as ReversedCollection
         let newEntries = Array(reversed)
         recentNotifications = newEntries
 
         // Post native notifications for genuinely new entries (not on first load)
-        if config.showNotifications && !isFirstLoad && newEntries.count > previousCount {
-            let newCount = newEntries.count - previousCount
+        if config.showNotifications && !isFirstLoad && lines.count > previousTotalLines {
+            let newCount = lines.count - previousTotalLines
             for entry in newEntries.prefix(newCount) {
-                postNativeNotification(entry.message)
+                postNativeNotification(entry)
             }
         }
     }
 
-    private func postNativeNotification(_ message: String) {
+    private func postNativeNotification(_ entry: NotificationEntry) {
         let content = UNMutableNotificationContent()
-        content.title = "AEON Voice"
-        content.body = message
+        content.title = entry.session ?? "AEON Voice"
+        if let prompt = entry.prompt {
+            content.subtitle = "Re: \(prompt)"
+        }
+        content.body = entry.message
         content.sound = nil  // Voice is already playing, no need for notification sound
 
         let request = UNNotificationRequest(
@@ -564,7 +580,13 @@ final class VoiceManager: ObservableObject {
             content: content,
             trigger: nil  // Deliver immediately
         )
-        UNUserNotificationCenter.current().add(request) { _ in }
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                DispatchQueue.main.async { [weak self] in
+                    self?.addLog("Notification error: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     // MARK: - Private — Script Runner
@@ -758,5 +780,18 @@ final class VoiceManager: ObservableObject {
             proc.waitUntilExit()
         }
         caffeinateProcess = nil
+    }
+}
+
+/// Ensures notifications display as banners even while the menu bar app is running.
+/// Must be a class instance held by VoiceManager (also a class) so the weak delegate
+/// reference from UNUserNotificationCenter survives.
+class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list])
     }
 }

@@ -16,8 +16,13 @@ applyTo: "**"
 Agents use a single command for all voice output:
 
 ```bash
-~/.local/bin/aeon-voice "<message>"
+~/.local/bin/aeon-voice --session "<AgentMode> · <workspace>" --prompt "<truncated user prompt>" "<message>"
 ```
+
+- `<AgentMode>` is the agent's current mode or display name (e.g. `AEON Prime`, `AEON Dev`, `GitHub Copilot`)
+- `<workspace>` is the basename of the current working directory (e.g. `chatkey`, `kengs-landing`)
+- The `--session` flag embeds context into macOS notifications so the user knows which chat session spoke
+- The `--prompt` flag carries a short summary (max 80 chars) of the user's last request that triggered this work. This appears in the notification subtitle so the user can recall context without finding the chat. Truncate or paraphrase long prompts to fit
 
 The voice, speed, and maximum message length are configured in the **AEON Voice** menu bar app. Settings are stored in `~/.aeon-voice-config.json`.
 
@@ -36,7 +41,7 @@ Follow these steps every time a voice trigger occurs:
    `> 🔊 "Done. Built the component and all tests pass."`
 3. **Run the voice command** (only if toggle is `on`):
    ```bash
-   [[ "$(cat ~/.aeon-voice-enabled 2>/dev/null)" == "on" ]] && ~/.local/bin/aeon-voice "Done. Built the component and all tests pass."
+   [[ "$(cat ~/.aeon-voice-enabled 2>/dev/null)" == "on" ]] && ~/.local/bin/aeon-voice --session "<AgentMode> · <workspace>" --prompt "<truncated user prompt>" "Done. Built the component and all tests pass."
    ```
 4. **Terminal pattern**: Use `run_in_terminal` with `mode=async` and `timeout=5000`. The script detaches playback internally and returns instantly
 
