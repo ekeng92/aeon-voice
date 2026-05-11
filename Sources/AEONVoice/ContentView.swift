@@ -367,6 +367,37 @@ struct ContentView: View {
     private var notificationsCollapsible: some View {
         DisclosureGroup(isExpanded: $notificationsExpanded) {
             VStack(alignment: .leading, spacing: 10) {
+
+                // Warning: notifications enabled in-app but blocked by macOS
+                if manager.config.notificationMode != "off" && manager.systemNotificationsDenied {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+                            .font(.system(size: 12))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Blocked by macOS")
+                                .font(.caption.weight(.semibold))
+                            Text("Notifications are on but macOS has them disabled for this app.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Fix") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.aeon.voice") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .tint(.yellow)
+                    }
+                    .padding(8)
+                    .background {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(.yellow.opacity(0.12))
+                    }
+                }
+
                 Picker("Voice notifications", selection: Binding(
                     get: { manager.config.notificationMode },
                     set: { newValue in

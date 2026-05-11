@@ -160,6 +160,7 @@ final class VoiceManager: ObservableObject {
     @Published private(set) var latestRemoteSHA: String?
     @Published private(set) var unreadCount: Int = 0
     @Published private(set) var actionFeedback: String?
+    @Published private(set) var systemNotificationsDenied: Bool = false
 
     enum UpdateState: Equatable {
         case idle
@@ -210,7 +211,9 @@ final class VoiceManager: ObservableObject {
         // Set up native notifications — must be in a class so the weak delegate ref persists
         let center = UNUserNotificationCenter.current()
         center.delegate = notificationDelegate
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        center.requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
+            self?.checkSystemNotificationStatus()
+        }
 
         loadConfig()
         readFlagFile()
@@ -254,10 +257,19 @@ final class VoiceManager: ObservableObject {
 
     // MARK: - Public Actions
 
+    func checkSystemNotificationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                self?.systemNotificationsDenied = settings.authorizationStatus == .denied
+            }
+        }
+    }
+
     func refresh() {
         loadConfig()
         readFlagFile()
         checkDependencies()
+        checkSystemNotificationStatus()
         refreshCounts()
         checkTeamsCall()
         showFeedback("✓ Status refreshed")

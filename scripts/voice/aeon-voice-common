@@ -94,15 +94,15 @@ apply_max_chars() {
   fi
 }
 
-# Send a macOS notification if showNotifications is enabled in config.
+# Send a macOS notification if notificationMode is not "off" in config.
 # Fails silently — notification errors never block voice output.
 maybe_notify() {
   local message="$1"
   local session="${2:-}"
   local prompt="${3:-}"
-  local notify_enabled
-  notify_enabled="$(read_config_value showNotifications false)"
-  [[ "$notify_enabled" == "true" ]] || return 0
+  local notify_mode
+  notify_mode="$(read_config_value notificationMode off)"
+  [[ "$notify_mode" != "off" ]] || return 0
 
   # Append to notification log (JSONL) — the menu bar app watches this file
   # and posts native macOS notifications via UNUserNotificationCenter.
@@ -157,8 +157,8 @@ speak_edge_tts() {
     find /tmp -name 'aeon-voice-*' -mmin +2 -delete 2>/dev/null || true
 
     # Determine notification config once
-    local notify_enabled
-    notify_enabled="$(read_config_value showNotifications false)"
+    local notify_mode
+    notify_mode="$(read_config_value notificationMode off)"
 
     # Phase 1: Pre-generate audio to temp file (NO LOCK — runs concurrently)
     local tmpbase
@@ -173,7 +173,7 @@ speak_edge_tts() {
 
     if [[ -s "$tmpmp3" ]]; then
       # Write notification before acquiring lock (no contention)
-      if [[ "$notify_enabled" == "true" ]]; then
+      if [[ "$notify_mode" != "off" ]]; then
         python3 -c '
 import json, sys, os, time
 entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "msg": sys.argv[1]}
