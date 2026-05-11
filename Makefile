@@ -36,6 +36,11 @@ uninstall:
 	@bash scripts/uninstall.sh
 
 run: app
+	@if pgrep -x $(BINARY_NAME) >/dev/null 2>&1; then \
+		echo "Stopping running instance..."; \
+		osascript -e 'quit app "$(APP_NAME)"' 2>/dev/null || pkill -x $(BINARY_NAME) 2>/dev/null || true; \
+		sleep 1; \
+	fi
 	@open "$(APP_BUNDLE)"
 
 clean:
