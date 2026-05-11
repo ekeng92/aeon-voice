@@ -917,6 +917,16 @@ final class VoiceManager: ObservableObject {
 
     private func startCaffeinate() {
         stopCaffeinate()
+        // Kill any orphaned caffeinate processes from prior app instances
+        // (pkill won't error if none are found)
+        let cleanup = Process()
+        cleanup.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        cleanup.arguments = ["-f", "caffeinate -s"]
+        cleanup.standardOutput = FileHandle.nullDevice
+        cleanup.standardError = FileHandle.nullDevice
+        try? cleanup.run()
+        cleanup.waitUntilExit()
+
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
         task.arguments = ["-s"]  // prevent system sleep on AC
