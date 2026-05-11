@@ -255,15 +255,28 @@ final class VoiceManager: ObservableObject {
     }
 
     func stopAudio() {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        task.arguments = ["-f", "afplay /tmp/aeon-voice-"]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        try? task.run()
-        task.waitUntilExit()
+        var killed = false
+        // Kill both afplay and ffplay — voice scripts use whichever is available
+        for pattern in ["afplay /tmp/aeon-voice-", "ffplay.*aeon-voice-"] {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+            task.arguments = ["-f", pattern]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            try? task.run()
+            task.waitUntilExit()
+            if task.terminationStatus == 0 { killed = true }
+        }
+        // Also kill any lockf holding the voice queue
+        let lockTask = Process()
+        lockTask.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        lockTask.arguments = ["-f", "lockf.*aeon-voice"]
+        lockTask.standardOutput = FileHandle.nullDevice
+        lockTask.standardError = FileHandle.nullDevice
+        try? lockTask.run()
+        lockTask.waitUntilExit()
         refreshCounts()
-        addLog(task.terminationStatus == 0 ? "Audio stopped" : "No audio playing")
+        addLog(killed ? "Audio stopped" : "No audio playing")
     }
 
     func clearNotifications() {

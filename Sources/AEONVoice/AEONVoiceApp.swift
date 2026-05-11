@@ -15,6 +15,12 @@ struct AEONVoiceApp: App {
     }
 }
 
+/// NSPanel with `.nonactivatingPanel` blocks SwiftUI button events.
+/// This subclass restores key-window capability.
+final class KeyablePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     let manager = VoiceManager()
     private var statusItem: NSStatusItem!
@@ -31,7 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let panelSize = NSSize(width: 360, height: 680)
-        panel = NSPanel(
+        panel = KeyablePanel(
             contentRect: NSRect(origin: .zero, size: panelSize),
             styleMask: [.nonactivatingPanel, .titled, .closable, .fullSizeContentView],
             backing: .buffered,
@@ -45,7 +51,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isReleasedWhenClosed = false
         panel.hasShadow = true
         panel.backgroundColor = .windowBackgroundColor
-        panel.hidesOnDeactivate = true
+        panel.hidesOnDeactivate = false
         panel.animationBehavior = .utilityWindow
 
         let hostingView = NSHostingView(rootView: ContentView(manager: manager))
