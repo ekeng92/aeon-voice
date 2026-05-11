@@ -123,6 +123,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         manager.markAsRead()
+        manager.checkSystemNotificationStatus()
 
         guard let button = statusItem.button else { return }
         let buttonFrame = button.window?.convertToScreen(button.frame) ?? .zero
