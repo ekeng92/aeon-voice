@@ -66,6 +66,7 @@ final class VoiceManager: ObservableObject {
         var muteOnTeams: Bool
         var showNotifications: Bool
         var showUpdateNotifications: Bool
+        var keepAwake: Bool
 
         static let `default` = VoiceConfig(
             defaultVoice: "en-US-AndrewNeural",
@@ -73,7 +74,8 @@ final class VoiceManager: ObservableObject {
             maxCharacters: 500,
             muteOnTeams: true,
             showNotifications: false,
-            showUpdateNotifications: true
+            showUpdateNotifications: true,
+            keepAwake: false
         )
 
         // Custom decoder so existing config files that lack newer keys
@@ -86,16 +88,19 @@ final class VoiceManager: ObservableObject {
             muteOnTeams               = try c.decodeIfPresent(Bool.self,   forKey: .muteOnTeams)               ?? true
             showNotifications         = try c.decodeIfPresent(Bool.self,   forKey: .showNotifications)         ?? false
             showUpdateNotifications   = try c.decodeIfPresent(Bool.self,   forKey: .showUpdateNotifications)   ?? true
+            keepAwake                 = try c.decodeIfPresent(Bool.self,   forKey: .keepAwake)                 ?? false
         }
 
         init(defaultVoice: String, defaultRate: String, maxCharacters: Int,
-             muteOnTeams: Bool, showNotifications: Bool, showUpdateNotifications: Bool = true) {
+             muteOnTeams: Bool, showNotifications: Bool, showUpdateNotifications: Bool = true,
+             keepAwake: Bool = false) {
             self.defaultVoice              = defaultVoice
             self.defaultRate               = defaultRate
             self.maxCharacters             = maxCharacters
             self.muteOnTeams               = muteOnTeams
             self.showNotifications         = showNotifications
             self.showUpdateNotifications   = showUpdateNotifications
+            self.keepAwake                 = keepAwake
         }
     }
 
@@ -186,6 +191,13 @@ final class VoiceManager: ObservableObject {
         checkTeamsCall()
         loadNotifications()
         cleanStaleTempFiles()
+
+        // Restore Keep Awake from persisted config
+        if config.keepAwake {
+            startCaffeinate()
+            keepAwake = true
+        }
+
         addLog("AEON Voice started")
 
         startFileMonitor()
@@ -246,12 +258,15 @@ final class VoiceManager: ObservableObject {
         if keepAwake {
             stopCaffeinate()
             keepAwake = false
+            config.keepAwake = false
             addLog("Keep Awake off — sleep restored")
         } else {
             startCaffeinate()
             keepAwake = true
+            config.keepAwake = true
             addLog("Keep Awake on — preventing sleep")
         }
+        saveConfig()
     }
 
     func stopAudio() {
