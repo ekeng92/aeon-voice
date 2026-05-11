@@ -257,18 +257,22 @@ struct ContentView: View {
                 actionButton("Stop Audio", icon: "stop.fill", tint: .red) {
                     manager.stopAudio()
                 }
+                .help("Kill any voice audio currently playing")
                 actionButton("Clean Temp", icon: "trash", tint: Color(.systemGray)) {
                     manager.cleanTemp()
                 }
+                .help("Remove leftover audio temp files from /tmp")
             }
 
             HStack(spacing: 8) {
                 actionButton("Initialize", icon: "wrench.fill", tint: Color(.systemGray)) {
                     manager.initialize()
                 }
+                .help("Re-create the voice flag file and reset voice state")
                 actionButton("Refresh", icon: "arrow.clockwise", tint: Color(.systemGray)) {
                     manager.refresh()
                 }
+                .help("Reload config, check dependencies, and update status")
             }
         }
     }
