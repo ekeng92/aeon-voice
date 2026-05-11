@@ -274,6 +274,14 @@ struct ContentView: View {
                 }
                 .help("Reload config, check dependencies, and update status")
             }
+
+            if let feedback = manager.actionFeedback {
+                Text(feedback)
+                    .font(.caption)
+                    .foregroundStyle(feedback.hasPrefix("✓") ? .green : .secondary)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.3), value: manager.actionFeedback)
+            }
         }
     }
 

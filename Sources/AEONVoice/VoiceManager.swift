@@ -133,6 +133,7 @@ final class VoiceManager: ObservableObject {
     @Published private(set) var updateState: UpdateState = .idle
     @Published private(set) var latestRemoteSHA: String?
     @Published private(set) var unreadCount: Int = 0
+    @Published private(set) var actionFeedback: String?
 
     enum UpdateState: Equatable {
         case idle
@@ -168,6 +169,7 @@ final class VoiceManager: ObservableObject {
     private let notificationDelegate = NotificationDelegate()
     private var lastUpdateCheckTime: Date?
     private var lastNotifiedUpdateSHA: String?
+    private var feedbackTimer: Timer?
 
     // MARK: - Init / Deinit
 
@@ -232,6 +234,7 @@ final class VoiceManager: ObservableObject {
         checkDependencies()
         refreshCounts()
         checkTeamsCall()
+        showFeedback("✓ Status refreshed")
         addLog("Status refreshed")
     }
 
@@ -249,7 +252,9 @@ final class VoiceManager: ObservableObject {
             DispatchQueue.main.async {
                 self?.readFlagFile()
                 self?.restartFileMonitorIfNeeded()
-                self?.addLog(output.isEmpty ? "Voice initialized" : output)
+                let msg = output.isEmpty ? "Voice initialized" : output
+                self?.showFeedback("✓ \(msg)")
+                self?.addLog(msg)
             }
         }
     }
@@ -291,7 +296,9 @@ final class VoiceManager: ObservableObject {
         try? lockTask.run()
         lockTask.waitUntilExit()
         refreshCounts()
-        addLog(killed ? "Audio stopped" : "No audio playing")
+        let msg = killed ? "Audio stopped" : "No audio playing"
+        showFeedback(killed ? "✓ \(msg)" : msg)
+        addLog(msg)
     }
 
     func clearNotifications() {
@@ -317,7 +324,9 @@ final class VoiceManager: ObservableObject {
             }
         }
         refreshCounts()
-        addLog(count > 0 ? "Cleaned \(count) temp file\(count == 1 ? "" : "s")" : "No temp files")
+        let msg = count > 0 ? "Cleaned \(count) temp file\(count == 1 ? "" : "s")" : "No temp files"
+        showFeedback(count > 0 ? "✓ \(msg)" : msg)
+        addLog(msg)
     }
 
     /// Remove stale temp files (>2 min old) on startup to clean up after crashed processes.
@@ -871,6 +880,14 @@ final class VoiceManager: ObservableObject {
         activityLog.insert(LogEntry(timestamp: Date(), message: message), at: 0)
         if activityLog.count > 50 {
             activityLog = Array(activityLog.prefix(50))
+        }
+    }
+
+    private func showFeedback(_ message: String) {
+        feedbackTimer?.invalidate()
+        actionFeedback = message
+        feedbackTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+            self?.actionFeedback = nil
         }
     }
 
