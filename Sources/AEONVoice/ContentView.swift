@@ -367,20 +367,20 @@ struct ContentView: View {
     private var notificationsCollapsible: some View {
         DisclosureGroup(isExpanded: $notificationsExpanded) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Toggle(isOn: Binding(
-                        get: { manager.config.showNotifications },
-                        set: { newValue in
-                            manager.config.showNotifications = newValue
-                            manager.saveConfig()
-                        }
-                    )) {
-                        Text("Notify on voice output")
-                            .font(.caption)
+                Picker("Voice notifications", selection: Binding(
+                    get: { manager.config.notificationMode },
+                    set: { newValue in
+                        manager.config.notificationMode = newValue
+                        manager.saveConfig()
                     }
-                    .toggleStyle(.checkbox)
+                )) {
+                    Text("Off").tag("off")
+                    Text("Only when away (30s idle)").tag("whenAway")
+                    Text("Always").tag("always")
                 }
-                .help("Shows a macOS notification whenever voice output fires, useful when you step away and might miss a spoken completion or follow-up message.")
+                .pickerStyle(.menu)
+                .font(.caption)
+                .help("Controls when macOS notifications appear for voice output. \"Only when away\" fires after 30 seconds of no mouse or keyboard activity, so you catch messages you missed while away.")
 
                 HStack {
                     Toggle(isOn: Binding(
@@ -408,7 +408,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
-                if manager.config.showNotifications {
+                if manager.config.notificationMode != "off" {
                     Divider()
                     notificationsSection
                 }

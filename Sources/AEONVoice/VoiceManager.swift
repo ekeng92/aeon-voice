@@ -64,43 +64,69 @@ final class VoiceManager: ObservableObject {
         var defaultRate: String
         var maxCharacters: Int
         var muteOnTeams: Bool
-        var showNotifications: Bool
+        var notificationMode: String  // "off", "whenAway", "always"
         var showUpdateNotifications: Bool
         var keepAwake: Bool
+
+        /// Legacy key kept for backward compat decoding
+        private enum CodingKeys: String, CodingKey {
+            case defaultVoice, defaultRate, maxCharacters, muteOnTeams
+            case notificationMode, showNotifications  // decode either key
+            case showUpdateNotifications, keepAwake
+        }
 
         static let `default` = VoiceConfig(
             defaultVoice: "en-US-AndrewNeural",
             defaultRate: "",
             maxCharacters: 500,
             muteOnTeams: true,
-            showNotifications: false,
+            notificationMode: "off",
             showUpdateNotifications: true,
             keepAwake: false
         )
 
         // Custom decoder so existing config files that lack newer keys
-        // (e.g. showNotifications) still load cleanly instead of failing.
+        // still load cleanly. Migrates old showNotifications bool to notificationMode.
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             defaultVoice              = try c.decodeIfPresent(String.self, forKey: .defaultVoice)              ?? "en-US-AndrewNeural"
             defaultRate               = try c.decodeIfPresent(String.self, forKey: .defaultRate)               ?? ""
             maxCharacters             = try c.decodeIfPresent(Int.self,    forKey: .maxCharacters)             ?? 500
             muteOnTeams               = try c.decodeIfPresent(Bool.self,   forKey: .muteOnTeams)               ?? true
-            showNotifications         = try c.decodeIfPresent(Bool.self,   forKey: .showNotifications)         ?? false
+            // Migrate: if notificationMode exists use it, else convert old showNotifications bool
+            if let mode = try c.decodeIfPresent(String.self, forKey: .notificationMode) {
+                notificationMode = mode
+            } else if let legacy = try c.decodeIfPresent(Bool.self, forKey: .showNotifications), legacy {
+                notificationMode = "whenAway"
+            } else {
+                notificationMode = "off"
+            }
             showUpdateNotifications   = try c.decodeIfPresent(Bool.self,   forKey: .showUpdateNotifications)   ?? true
             keepAwake                 = try c.decodeIfPresent(Bool.self,   forKey: .keepAwake)                 ?? false
         }
 
         init(defaultVoice: String, defaultRate: String, maxCharacters: Int,
-             muteOnTeams: Bool, showNotifications: Bool, showUpdateNotifications: Bool = true,
+             muteOnTeams: Bool, notificationMode: String = "off", showUpdateNotifications: Bool = true,
              keepAwake: Bool = false) {
             self.defaultVoice              = defaultVoice
             self.defaultRate               = defaultRate
             self.maxCharacters             = maxCharacters
             self.muteOnTeams               = muteOnTeams
-            self.showNotifications         = showNotifications
+            self.notificationMode          = notificationMode
             self.showUpdateNotifications   = showUpdateNotifications
             self.keepAwake                 = keepAwake
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(defaultVoice, forKey: .defaultVoice)
+            try c.encode(defaultRate, forKey: .defaultRate)
+            try c.encode(maxCharacters, forKey: .maxCharacters)
+            try c.encode(muteOnTeams, forKey: .muteOnTeams)
+            try c.encode(notificationMode, forKey: .notificationMode)
+            // Don't encode legacy showNotifications
+            try c.encode(showUpdateNotifications, forKey: .showUpdateNotifications)
+            try c.encode(keepAwake, forKey: .keepAwake)
         }
     }
 
@@ -645,7 +671,16 @@ final class VoiceManager: ObservableObject {
 
             // Only post system notifications if enabled AND user appears idle (> 30s).
             // If the user is active they heard the voice; notifications are for the absent user.
-            if config.showNotifications && isUserIdle(seconds: 30) {
+            let shouldNotify: Bool
+            switch config.notificationMode {
+            case "always":
+                shouldNotify = true
+            case "whenAway":
+                shouldNotify = isUserIdle(seconds: 30)
+            default:
+                shouldNotify = false
+            }
+            if shouldNotify {
                 for entry in newEntries.prefix(newCount) {
                     postNativeNotification(entry)
                 }
