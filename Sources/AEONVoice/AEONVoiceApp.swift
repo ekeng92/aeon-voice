@@ -26,6 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: NSPanel!
     private var cancellable: AnyCancellable?
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Single-instance guard: quit if another copy is already running
@@ -116,7 +118,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePanel() {
         if panel.isVisible {
-            panel.orderOut(nil)
+            closePanel()
             return
         }
 
@@ -136,5 +138,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             NSApp.activate(ignoringOtherApps: true)
         }
+
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            self?.closePanel()
+        }
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+            if event.window === self.panel { return event }
+            if event.window === self.statusItem.button?.window { return event }
+            self.closePanel()
+            return event
+        }
+    }
+
+    private func closePanel() {
+        panel.orderOut(nil)
+        if let m = globalMonitor { NSEvent.removeMonitor(m); globalMonitor = nil }
+        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
     }
 }
