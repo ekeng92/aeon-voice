@@ -88,6 +88,14 @@ if [[ -f "$CONFIG_FILE" ]]; then
     ok "Removed config file"
 fi
 
+# Remove supplementary files
+for f in "$HOME/.aeon-voice-python" "$HOME/.aeon-voice-notifications.jsonl" "$HOME/.aeon-voice-queue.lock"; do
+    if [[ -f "$f" ]]; then
+        rm -f "$f"
+        ok "Removed $(basename "$f")"
+    fi
+done
+
 # Note: we intentionally do NOT remove ~/.aeon-voice-enabled
 # The user may want to preserve their preference.
 

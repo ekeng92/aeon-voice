@@ -58,18 +58,26 @@ edge_tts_available() {
   python3 -c "import edge_tts" >/dev/null 2>&1
 }
 
-# Read a value from the JSON config file.
+# Read a value from the JSON config file using python3 for safe parsing.
 # Usage: read_config_value <key> <default>
 read_config_value() {
   local key="$1"
   local default_val="$2"
   if [[ -f "$CONFIG_FILE" ]]; then
     local val
-    val="$(grep "\"$key\"" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*: *//; s/["\,]//g; s/^ *//; s/ *$//')"
-    if [[ -n "$val" ]]; then
-      echo "$val"
-      return
-    fi
+    val="$(python3 -c "
+import json, sys
+try:
+    with open('$CONFIG_FILE') as f:
+        cfg = json.load(f)
+    v = cfg.get('$key')
+    if v is not None:
+        print(v if not isinstance(v, bool) else str(v).lower())
+    else:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null)" && { echo "$val"; return; }
   fi
   echo "$default_val"
 }
