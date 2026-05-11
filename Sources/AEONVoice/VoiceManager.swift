@@ -185,6 +185,7 @@ final class VoiceManager: ObservableObject {
         refreshCounts()
         checkTeamsCall()
         loadNotifications()
+        cleanStaleTempFiles()
         addLog("AEON Voice started")
 
         startFileMonitor()
@@ -289,6 +290,24 @@ final class VoiceManager: ObservableObject {
         }
         refreshCounts()
         addLog(count > 0 ? "Cleaned \(count) temp file\(count == 1 ? "" : "s")" : "No temp files")
+    }
+
+    /// Remove stale temp files (>2 min old) on startup to clean up after crashed processes.
+    private func cleanStaleTempFiles() {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(atPath: "/tmp") else { return }
+        let cutoff = Date().addingTimeInterval(-120)
+        var count = 0
+        for item in items where item.hasPrefix("aeon-voice-") {
+            let path = "/tmp/\(item)"
+            if let attrs = try? fm.attributesOfItem(atPath: path),
+               let modified = attrs[.modificationDate] as? Date,
+               modified < cutoff {
+                try? fm.removeItem(atPath: path)
+                count += 1
+            }
+        }
+        if count > 0 { addLog("Cleaned \(count) stale temp file\(count == 1 ? "" : "s")") }
     }
 
     /// Test a voice by edge-tts voice ID. Bypasses mute state so users can preview.
@@ -557,6 +576,13 @@ final class VoiceManager: ObservableObject {
               let content = String(data: data, encoding: .utf8) else { return }
 
         let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
+
+        // Rotate: if the log exceeds 10,000 lines, keep only the last 1,000
+        if lines.count > 10_000 {
+            let trimmed = lines.suffix(1_000).joined(separator: "\n") + "\n"
+            try? trimmed.write(toFile: notificationsPath, atomically: true, encoding: .utf8)
+        }
+
         notificationsTotalLines = lines.count
         let isoFormatter = ISO8601DateFormatter()
 
@@ -655,50 +681,19 @@ final class VoiceManager: ObservableObject {
         updateState = .checking
         addLog("Checking for updates...")
 
-        guard let url = URL(string: Self.githubAPIURL) else {
-            updateState = .failed("Invalid URL")
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
-        // Only fetch the SHA, minimal payload
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        fetchLatestCommitSHA { [weak self] sha, errorMessage in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-
-                if let error = error {
-                    self.updateState = .failed(error.localizedDescription)
-                    self.addLog("Update check failed: \(error.localizedDescription)")
-                    return
-                }
-
-                guard let data = data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let sha = json["sha"] as? String else {
-                    self.updateState = .failed("Could not parse response")
-                    self.addLog("Update check failed: bad response")
-                    return
-                }
-
-                let remoteSHA = String(sha.prefix(7))
-                self.latestRemoteSHA = remoteSHA
-
-                if self.buildCommit == "dev" {
-                    // Dev build, can't compare
-                    self.updateState = .updateAvailable(remoteSHA)
-                    self.addLog("Dev build, latest: \(remoteSHA)")
-                } else if remoteSHA == self.buildCommit {
-                    self.updateState = .upToDate
-                    self.addLog("Up to date (\(remoteSHA))")
+                if let remoteSHA = sha {
+                    self.latestRemoteSHA = remoteSHA
+                    self.applyUpdateState(remoteSHA: remoteSHA, notify: false)
                 } else {
-                    self.updateState = .updateAvailable(remoteSHA)
-                    self.addLog("Update available: \(remoteSHA)")
+                    let msg = errorMessage ?? "Unknown error"
+                    self.updateState = .failed(msg)
+                    self.addLog("Update check failed: \(msg)")
                 }
             }
-        }.resume()
+        }
     }
 
     func runUpdate() {
@@ -706,11 +701,20 @@ final class VoiceManager: ObservableObject {
         addLog("Downloading and installing update...")
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // Clone the repo to a temp directory and run install.sh locally
+            // instead of piping curl to bash. This ensures we execute only
+            // the code we cloned, verified by git's transport integrity.
+            let cloneDir = NSTemporaryDirectory() + "aeon-voice-update-\(UUID().uuidString)"
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/bin/bash")
             task.arguments = [
                 "-c",
-                "curl -fsSL '\(Self.remoteInstallURL)' | bash -s -- --non-interactive"
+                """
+                set -euo pipefail
+                git clone --depth 1 https://github.com/ekeng92/aeon-voice.git "\(cloneDir)" 2>/dev/null && \
+                bash "\(cloneDir)/scripts/install.sh" --non-interactive && \
+                rm -rf "\(cloneDir)"
+                """
             ]
             task.standardOutput = FileHandle.nullDevice
             task.standardError = FileHandle.nullDevice
@@ -719,6 +723,8 @@ final class VoiceManager: ObservableObject {
                 try task.run()
                 task.waitUntilExit()
                 let status = task.terminationStatus
+                // Clean up clone dir on failure too
+                try? FileManager.default.removeItem(atPath: cloneDir)
 
                 DispatchQueue.main.async {
                     guard let self = self else { return }
@@ -731,6 +737,7 @@ final class VoiceManager: ObservableObject {
                     }
                 }
             } catch {
+                try? FileManager.default.removeItem(atPath: cloneDir)
                 DispatchQueue.main.async {
                     self?.updateState = .failed(error.localizedDescription)
                     self?.addLog("Update failed: \(error.localizedDescription)")
@@ -755,43 +762,58 @@ final class VoiceManager: ObservableObject {
 
         lastUpdateCheckTime = Date()
 
-        guard let url = URL(string: Self.githubAPIURL) else { return }
+        fetchLatestCommitSHA { [weak self] sha, _ in
+            DispatchQueue.main.async {
+                guard let self = self, let remoteSHA = sha else { return }
+                self.latestRemoteSHA = remoteSHA
+                self.applyUpdateState(remoteSHA: remoteSHA, notify: true)
+            }
+        }
+    }
+
+    /// Shared GitHub API call to fetch the latest commit SHA for main.
+    /// Calls completion with the 7-char SHA on success, or nil on failure.
+    private func fetchLatestCommitSHA(completion: @escaping (String?, String?) -> Void) {
+        guard let url = URL(string: Self.githubAPIURL) else {
+            completion(nil, "Invalid URL")
+            return
+        }
 
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                guard error == nil,
-                      let data = data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let sha = json["sha"] as? String else { return }
-
-                let remoteSHA = String(sha.prefix(7))
-                self.latestRemoteSHA = remoteSHA
-
-                let isNewer: Bool
-                if self.buildCommit == "dev" {
-                    isNewer = true
-                } else {
-                    isNewer = remoteSHA != self.buildCommit
-                }
-
-                if isNewer {
-                    self.updateState = .updateAvailable(remoteSHA)
-
-                    // Post a one-time native notification if enabled and not already notified for this SHA
-                    if self.config.showUpdateNotifications && self.lastNotifiedUpdateSHA != remoteSHA {
-                        self.lastNotifiedUpdateSHA = remoteSHA
-                        self.postUpdateNotification(sha: remoteSHA)
-                    }
-                } else {
-                    self.updateState = .upToDate
-                }
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            if let error = error {
+                completion(nil, error.localizedDescription)
+                return
             }
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let sha = json["sha"] as? String else {
+                completion(nil, "Could not parse response")
+                return
+            }
+            completion(String(sha.prefix(7)), nil)
         }.resume()
+    }
+
+    /// Apply update state from a remote SHA, optionally posting a native notification.
+    private func applyUpdateState(remoteSHA: String, notify: Bool) {
+        if buildCommit == "dev" {
+            updateState = .updateAvailable(remoteSHA)
+            addLog("Dev build, latest: \(remoteSHA)")
+        } else if remoteSHA == buildCommit {
+            updateState = .upToDate
+            addLog("Up to date (\(remoteSHA))")
+        } else {
+            updateState = .updateAvailable(remoteSHA)
+            addLog("Update available: \(remoteSHA)")
+            if notify && config.showUpdateNotifications && lastNotifiedUpdateSHA != remoteSHA {
+                lastNotifiedUpdateSHA = remoteSHA
+                postUpdateNotification(sha: remoteSHA)
+            }
+        }
     }
 
     private func postUpdateNotification(sha: String) {

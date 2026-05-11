@@ -3,4 +3,15 @@
 # Voice: Ava (en-US) — Confident, expressive, quick (+10% rate).
 
 source "$HOME/.local/bin/aeon-voice-common"
-speak_edge_tts "en-US-AvaNeural" "+10%" "$1"
+
+session=""
+prompt=""
+while [[ $# -gt 1 ]]; do
+  case "$1" in
+    --session|-s) session="$2"; shift 2 ;;
+    --prompt|-p) prompt="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
+
+speak_edge_tts "en-US-AvaNeural" "+10%" "$1" "$session" "$prompt"
