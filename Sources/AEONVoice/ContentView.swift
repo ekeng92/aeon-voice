@@ -4,6 +4,7 @@ struct ContentView: View {
     @ObservedObject var manager: VoiceManager
     @State private var testMessage = "Hello, this is AEON voice."
     @State private var testVoiceId = "en-US-AndrewNeural"
+    @State private var notificationsExpanded = false
 
     var body: some View {
         ScrollView {
@@ -46,12 +47,10 @@ struct ContentView: View {
                 activitySection
                     .padding(16)
 
-                if manager.config.showNotifications {
-                    Divider().padding(.horizontal, 16)
+                Divider().padding(.horizontal, 16)
 
-                    notificationsSection
-                        .padding(16)
-                }
+                notificationsCollapsible
+                    .padding(16)
 
                 Divider()
 
@@ -243,35 +242,6 @@ struct ContentView: View {
             }
             .help("Automatically suppresses voice output when a Microsoft Teams call is detected via macOS power assertions.")
 
-            HStack {
-                Toggle(isOn: Binding(
-                    get: { manager.config.showNotifications },
-                    set: { newValue in
-                        manager.config.showNotifications = newValue
-                        manager.saveConfig()
-                    }
-                )) {
-                    Text("Notify on voice output")
-                        .font(.caption)
-                }
-                .toggleStyle(.checkbox)
-            }
-            .help("Shows a macOS notification whenever voice output fires — useful when you step away and might miss a spoken completion or follow-up message.")
-
-            HStack {
-                Toggle(isOn: Binding(
-                    get: { manager.config.showUpdateNotifications },
-                    set: { newValue in
-                        manager.config.showUpdateNotifications = newValue
-                        manager.saveConfig()
-                    }
-                )) {
-                    Text("Notify on updates available")
-                        .font(.caption)
-                }
-                .toggleStyle(.checkbox)
-            }
-            .help("Shows a one-time macOS notification when a new version of AEON Voice is available on GitHub. Checks automatically every 30 minutes.")
         }
     }
 
@@ -377,6 +347,65 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    // MARK: - Notifications (Collapsible)
+
+    private var notificationsCollapsible: some View {
+        DisclosureGroup(isExpanded: $notificationsExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Toggle(isOn: Binding(
+                        get: { manager.config.showNotifications },
+                        set: { newValue in
+                            manager.config.showNotifications = newValue
+                            manager.saveConfig()
+                        }
+                    )) {
+                        Text("Notify on voice output")
+                            .font(.caption)
+                    }
+                    .toggleStyle(.checkbox)
+                }
+                .help("Shows a macOS notification whenever voice output fires, useful when you step away and might miss a spoken completion or follow-up message.")
+
+                HStack {
+                    Toggle(isOn: Binding(
+                        get: { manager.config.showUpdateNotifications },
+                        set: { newValue in
+                            manager.config.showUpdateNotifications = newValue
+                            manager.saveConfig()
+                        }
+                    )) {
+                        Text("Notify on updates available")
+                            .font(.caption)
+                    }
+                    .toggleStyle(.checkbox)
+                }
+                .help("Shows a one-time macOS notification when a new version of AEON Voice is available on GitHub. Checks automatically every 30 minutes.")
+
+                Button(action: {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.aeon.voice") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }) {
+                    Text("Open Notification Settings")
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+
+                if manager.config.showNotifications {
+                    Divider()
+                    notificationsSection
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            Text("NOTIFICATIONS")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
         }
     }
 

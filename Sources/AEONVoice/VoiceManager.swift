@@ -127,6 +127,7 @@ final class VoiceManager: ObservableObject {
     @Published private(set) var recentNotifications: [NotificationEntry] = []
     @Published private(set) var updateState: UpdateState = .idle
     @Published private(set) var latestRemoteSHA: String?
+    @Published private(set) var unreadCount: Int = 0
 
     enum UpdateState: Equatable {
         case idle
@@ -269,7 +270,12 @@ final class VoiceManager: ObservableObject {
         recentNotifications = []
         notificationsLastModified = nil
         notificationsTotalLines = 0
+        unreadCount = 0
         addLog("Notifications cleared")
+    }
+
+    func markAsRead() {
+        if unreadCount > 0 { unreadCount = 0 }
     }
 
     func cleanTemp() {
@@ -569,13 +575,25 @@ final class VoiceManager: ObservableObject {
         let newEntries = Array(reversed)
         recentNotifications = newEntries
 
-        // Post native notifications for genuinely new entries (not on first load)
-        if config.showNotifications && !isFirstLoad && lines.count > previousTotalLines {
+        // Track unread and post native notifications for genuinely new entries (not on first load)
+        if !isFirstLoad && lines.count > previousTotalLines {
             let newCount = lines.count - previousTotalLines
-            for entry in newEntries.prefix(newCount) {
-                postNativeNotification(entry)
+            unreadCount += newCount
+
+            // Only post system notifications if enabled AND user appears idle (> 30s).
+            // If the user is active they heard the voice; notifications are for the absent user.
+            if config.showNotifications && isUserIdle(seconds: 30) {
+                for entry in newEntries.prefix(newCount) {
+                    postNativeNotification(entry)
+                }
             }
         }
+    }
+
+    private func isUserIdle(seconds threshold: Double) -> Bool {
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .mouseMoved)
+        let keyIdle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+        return min(idle, keyIdle) > threshold
     }
 
     private func postNativeNotification(_ entry: NotificationEntry) {

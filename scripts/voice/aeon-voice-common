@@ -135,96 +135,38 @@ speak_edge_tts() {
 
   local lock_file="$HOME/.aeon-voice-queue.lock"
 
-  # Fully detach TTS generation + playback into its own process.
-  # &! (zsh: background + disown) makes it immune to terminal death —
-  # the voice plays to completion even if the calling terminal is killed.
+  # Fully detach into its own process. &! (zsh disown) makes it immune
+  # to terminal death — the voice plays even if the terminal is killed.
   #
-  # lockf serializes concurrent voices into a FIFO queue. Each detached
-  # process waits for the lock before generating + playing, so multiple
-  # agents never talk over each other. Timeout of 120s prevents a hung
-  # process from blocking the queue forever.
+  # Two-phase pipeline:
+  #   Phase 1 (unlocked): Generate audio to a temp file. Multiple voices
+  #     can generate concurrently while a previous voice is still playing.
+  #   Phase 2 (locked):   Play the pre-generated file under lockf. Only
+  #     one voice plays at a time, but there's no gap because the next
+  #     voice's audio was already generated during the previous playback.
   (
     # Clean up stale temp files from prior interrupted runs (older than 2 min)
     find /tmp -name 'aeon-voice-*' -mmin +2 -delete 2>/dev/null || true
 
-    # Determine notification config once (outside lock — no contention)
+    # Determine notification config once
     local notify_enabled
     notify_enabled="$(read_config_value showNotifications false)"
 
-    # Write the TTS+playback script to a temp file so lockf can execute it.
-    # lockf needs a command to run; heredocs can't be passed directly.
-    local play_script
-    play_script="$(mktemp /tmp/aeon-voice-play-XXXXXX.sh)"
-    chmod +x "$play_script"
+    # Phase 1: Pre-generate audio to temp file (NO LOCK — runs concurrently)
+    local tmpbase
+    tmpbase="$(mktemp /tmp/aeon-voice-XXXXXX)"
+    local tmpmp3="${tmpbase}.mp3"
 
-    if command -v ffplay >/dev/null 2>&1; then
-      # Streaming path: pipe TTS audio chunks directly to ffplay
-      cat > "$play_script" << 'PYEOF_WRAPPER'
-#!/bin/zsh
-exec python3 - "$@" << 'PYEOF'
-import asyncio, subprocess, sys, os, json, time
-import edge_tts
-
-async def main():
-    voice, rate, message = sys.argv[1], sys.argv[2], sys.argv[3]
-    notify = sys.argv[4] == "true"
-    session = sys.argv[5] if len(sys.argv) > 5 else ""
-    prompt = sys.argv[6] if len(sys.argv) > 6 else ""
-
-    kwargs = {}
-    if rate:
-        kwargs["rate"] = rate
-    communicate = edge_tts.Communicate(message, voice, **kwargs)
-
-    proc = subprocess.Popen(
-        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-"],
-        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    has_audio = False
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            has_audio = True
-            try:
-                proc.stdin.write(chunk["data"])
-            except BrokenPipeError:
-                break
-    proc.stdin.close()
-
-    if has_audio and notify:
-        entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "msg": message}
-        if session:
-            entry["session"] = session
-        if prompt:
-            entry["prompt"] = prompt
-        path = os.path.expanduser("~/.aeon-voice-notifications.jsonl")
-        with open(path, "a") as f:
-            f.write(json.dumps(entry) + "\n")
-
-    proc.wait()
-
-asyncio.run(main())
-PYEOF
-PYEOF_WRAPPER
-
-      lockf -k -t 120 "$lock_file" "$play_script" "$voice" "$rate" "$message" "$notify_enabled" "$session" "$prompt"
+    if [[ -n "$rate" ]]; then
+      python3 -m edge_tts --voice "$voice" --rate "$rate" --text "$message" --write-media "$tmpmp3" >/dev/null 2>&1
     else
-      # Fallback: file-based generation + afplay (also queued)
-      cat > "$play_script" << 'FALLBACK_WRAPPER'
-#!/bin/zsh
-voice="$1"; rate="$2"; message="$3"; notify_enabled="$4"; session="$5"; prompt="$6"
+      python3 -m edge_tts --voice "$voice" --text "$message" --write-media "$tmpmp3" >/dev/null 2>&1
+    fi
 
-tmpbase="$(mktemp /tmp/aeon-voice-XXXXXX)"
-tmpfile="${tmpbase}.mp3"
-
-if [[ -n "$rate" ]]; then
-  python3 -m edge_tts --voice "$voice" --rate "$rate" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
-else
-  python3 -m edge_tts --voice "$voice" --text "$message" --write-media "$tmpfile" >/dev/null 2>&1
-fi
-
-if [[ -s "$tmpfile" ]]; then
-  if [[ "$notify_enabled" == "true" ]]; then
-    python3 -c '
+    if [[ -s "$tmpmp3" ]]; then
+      # Write notification before acquiring lock (no contention)
+      if [[ "$notify_enabled" == "true" ]]; then
+        python3 -c '
 import json, sys, os, time
 entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "msg": sys.argv[1]}
 if len(sys.argv) > 2 and sys.argv[2]: entry["session"] = sys.argv[2]
@@ -232,16 +174,16 @@ if len(sys.argv) > 3 and sys.argv[3]: entry["prompt"] = sys.argv[3]
 path = os.path.expanduser("~/.aeon-voice-notifications.jsonl")
 with open(path, "a") as f: f.write(json.dumps(entry) + "\n")
 ' "$message" "$session" "$prompt" 2>/dev/null || true
-  fi
-  /usr/bin/afplay "$tmpfile" >/dev/null 2>&1
-fi
+      fi
 
-rm -f "$tmpfile" "$tmpbase"
-FALLBACK_WRAPPER
-
-      lockf -k -t 120 "$lock_file" "$play_script" "$voice" "$rate" "$message" "$notify_enabled" "$session" "$prompt"
+      # Phase 2: Play under lock — only one voice at a time, zero gap
+      if command -v ffplay >/dev/null 2>&1; then
+        lockf -k -t 120 "$lock_file" ffplay -nodisp -autoexit -loglevel quiet "$tmpmp3"
+      else
+        lockf -k -t 120 "$lock_file" /usr/bin/afplay "$tmpmp3"
+      fi
     fi
 
-    rm -f "$play_script"
+    rm -f "$tmpmp3" "$tmpbase"
   ) &!
 }
