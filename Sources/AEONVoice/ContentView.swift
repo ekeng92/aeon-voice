@@ -5,7 +5,6 @@ struct ContentView: View {
     @State private var testMessage = "Hello, this is AEON voice."
     @State private var testVoiceId = "en-US-AndrewNeural"
     @State private var notificationsExpanded = false
-    @State private var showUninstallConfirm = false
 
     var body: some View {
         ScrollView {
@@ -76,14 +75,6 @@ struct ContentView: View {
         // intended panel size and let the ScrollView handle overflow.
         .frame(width: 360, height: 680)
         .onAppear { testVoiceId = manager.config.defaultVoice }
-        .alert("Uninstall AEON Voice?", isPresented: $showUninstallConfirm) {
-            Button("Cancel", role: .cancel) { }
-            Button("Uninstall", role: .destructive) {
-                manager.performUninstall()
-            }
-        } message: {
-            Text("This will permanently remove AEON Voice and all its data:\n\n• App bundle\n• Voice scripts\n• LaunchAgent\n• Copilot instruction file\n• Config and state files\n• Temp audio files\n\nThis cannot be undone.")
-        }
     }
 
     // MARK: - Status Card
@@ -548,7 +539,7 @@ struct ContentView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Button(action: { showUninstallConfirm = true }) {
+            Button(action: { manager.confirmAndUninstall() }) {
                 Label("Uninstall AEON Voice", systemImage: "trash.fill")
                     .font(.caption)
                     .frame(maxWidth: .infinity)

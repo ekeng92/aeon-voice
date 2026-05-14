@@ -1019,16 +1019,45 @@ final class VoiceManager: ObservableObject {
 
     // MARK: - Uninstall
 
+    /// Shows an AppKit confirmation alert (works in NSPanel context where
+    /// SwiftUI .alert does not) and performs a comprehensive uninstall.
+    func confirmAndUninstall() {
+        let alert = NSAlert()
+        alert.messageText = "Uninstall AEON Voice?"
+        alert.informativeText = """
+        This will permanently remove AEON Voice and all its data:
+
+        • App bundle
+        • Voice scripts
+        • LaunchAgent
+        • Copilot instruction file
+        • Config and state files
+        • Temp audio files
+
+        This cannot be undone.
+        """
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "Uninstall")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        performUninstall()
+    }
+
     /// Performs a comprehensive uninstall: removes all AEON Voice artifacts,
     /// spawns a detached cleanup script to delete the app bundle after exit,
     /// then terminates the app.
     func performUninstall() {
         addLog("Starting comprehensive uninstall...")
-        let fm = FileManager.default
-        let home = NSHomeDirectory()
 
-        // 1. Stop Keep Awake
-        stopCaffeinate()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let fm = FileManager.default
+            let home = NSHomeDirectory()
+
+            // 1. Stop Keep Awake
+            DispatchQueue.main.sync { stopCaffeinate() }
 
         // 2. Stop any playing audio
         for pattern in ["afplay /tmp/aeon-voice-", "ffplay.*aeon-voice-"] {
@@ -1139,6 +1168,7 @@ final class VoiceManager: ObservableObject {
         DispatchQueue.main.async {
             NSApp.terminate(nil)
         }
+        } // end background queue
     }
 }
 
