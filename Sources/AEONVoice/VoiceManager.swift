@@ -67,12 +67,13 @@ final class VoiceManager: ObservableObject {
         var notificationMode: String  // "off", "whenAway", "always"
         var showUpdateNotifications: Bool
         var keepAwake: Bool
+        var subagentVoice: Bool
 
         /// Legacy key kept for backward compat decoding
         private enum CodingKeys: String, CodingKey {
             case defaultVoice, defaultRate, maxCharacters, muteOnTeams
             case notificationMode, showNotifications  // decode either key
-            case showUpdateNotifications, keepAwake
+            case showUpdateNotifications, keepAwake, subagentVoice
         }
 
         static let `default` = VoiceConfig(
@@ -82,7 +83,8 @@ final class VoiceManager: ObservableObject {
             muteOnTeams: true,
             notificationMode: "off",
             showUpdateNotifications: true,
-            keepAwake: false
+            keepAwake: false,
+            subagentVoice: false
         )
 
         // Custom decoder so existing config files that lack newer keys
@@ -103,11 +105,12 @@ final class VoiceManager: ObservableObject {
             }
             showUpdateNotifications   = try c.decodeIfPresent(Bool.self,   forKey: .showUpdateNotifications)   ?? true
             keepAwake                 = try c.decodeIfPresent(Bool.self,   forKey: .keepAwake)                 ?? false
+            subagentVoice             = try c.decodeIfPresent(Bool.self,   forKey: .subagentVoice)             ?? false
         }
 
         init(defaultVoice: String, defaultRate: String, maxCharacters: Int,
              muteOnTeams: Bool, notificationMode: String = "off", showUpdateNotifications: Bool = true,
-             keepAwake: Bool = false) {
+             keepAwake: Bool = false, subagentVoice: Bool = false) {
             self.defaultVoice              = defaultVoice
             self.defaultRate               = defaultRate
             self.maxCharacters             = maxCharacters
@@ -115,6 +118,7 @@ final class VoiceManager: ObservableObject {
             self.notificationMode          = notificationMode
             self.showUpdateNotifications   = showUpdateNotifications
             self.keepAwake                 = keepAwake
+            self.subagentVoice             = subagentVoice
         }
 
         func encode(to encoder: Encoder) throws {
@@ -127,6 +131,7 @@ final class VoiceManager: ObservableObject {
             // Don't encode legacy showNotifications
             try c.encode(showUpdateNotifications, forKey: .showUpdateNotifications)
             try c.encode(keepAwake, forKey: .keepAwake)
+            try c.encode(subagentVoice, forKey: .subagentVoice)
         }
     }
 
@@ -1010,6 +1015,130 @@ final class VoiceManager: ObservableObject {
             proc.waitUntilExit()
         }
         caffeinateProcess = nil
+    }
+
+    // MARK: - Uninstall
+
+    /// Performs a comprehensive uninstall: removes all AEON Voice artifacts,
+    /// spawns a detached cleanup script to delete the app bundle after exit,
+    /// then terminates the app.
+    func performUninstall() {
+        addLog("Starting comprehensive uninstall...")
+        let fm = FileManager.default
+        let home = NSHomeDirectory()
+
+        // 1. Stop Keep Awake
+        stopCaffeinate()
+
+        // 2. Stop any playing audio
+        for pattern in ["afplay /tmp/aeon-voice-", "ffplay.*aeon-voice-"] {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+            task.arguments = ["-f", pattern]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            try? task.run()
+            task.waitUntilExit()
+        }
+
+        // Also kill any lockf holding the voice queue
+        let lockKill = Process()
+        lockKill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        lockKill.arguments = ["-f", "lockf.*aeon-voice"]
+        lockKill.standardOutput = FileHandle.nullDevice
+        lockKill.standardError = FileHandle.nullDevice
+        try? lockKill.run()
+        lockKill.waitUntilExit()
+
+        // 3. Remove LaunchAgent
+        let launchAgentPlist = "\(home)/Library/LaunchAgents/com.aeon.voice.plist"
+        if fm.fileExists(atPath: launchAgentPlist) {
+            let bootout = Process()
+            bootout.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            bootout.arguments = ["bootout", "gui/\(getuid())", launchAgentPlist]
+            bootout.standardOutput = FileHandle.nullDevice
+            bootout.standardError = FileHandle.nullDevice
+            try? bootout.run()
+            bootout.waitUntilExit()
+            try? fm.removeItem(atPath: launchAgentPlist)
+        }
+
+        // 4. Remove voice scripts
+        let voiceScripts = [
+            "aeon-voice-common", "aeon-voice", "aeon-prime-voice",
+            "aeon-dev-voice", "aeon-voice-toggle", "aeon-voice-init",
+            "aeon-voice-status", "aeon-voice-control"
+        ]
+        for script in voiceScripts {
+            let path = "\(binPath)/\(script)"
+            if fm.fileExists(atPath: path) {
+                try? fm.removeItem(atPath: path)
+            }
+        }
+
+        // 5. Clean temp files
+        if let items = try? fm.contentsOfDirectory(atPath: "/tmp") {
+            for item in items where item.hasPrefix("aeon-voice-") {
+                try? fm.removeItem(atPath: "/tmp/\(item)")
+            }
+        }
+
+        // 6. Remove Copilot instruction file
+        let copilotFile = "\(home)/.copilot/instructions/aeon-voice.instructions.md"
+        if fm.fileExists(atPath: copilotFile) {
+            try? fm.removeItem(atPath: copilotFile)
+        }
+
+        // 7. Remove config and supplementary files
+        let filesToRemove = [
+            configPath,
+            flagPath,
+            pythonPathFile,
+            notificationsPath,
+            "\(home)/.aeon-voice-queue.lock"
+        ]
+        for file in filesToRemove {
+            if fm.fileExists(atPath: file) {
+                try? fm.removeItem(atPath: file)
+            }
+        }
+
+        // 8. Spawn a detached cleanup script that removes the app bundle
+        //    after this process exits, then deletes itself.
+        let appBundlePath = "\(home)/Applications/AEON Voice.app"
+        let cleanupScript = "/tmp/aeon-voice-uninstall-cleanup.sh"
+        let scriptContent = """
+        #!/bin/bash
+        # Wait for the app process to exit
+        while pgrep -x "AEONVoice" &>/dev/null; do sleep 0.5; done
+        sleep 1
+        rm -rf "\(appBundlePath)"
+        rm -f "\(cleanupScript)"
+        """
+        fm.createFile(atPath: cleanupScript, contents: scriptContent.data(using: .utf8))
+
+        // Make it executable and launch detached
+        let chmod = Process()
+        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmod.arguments = ["+x", cleanupScript]
+        chmod.standardOutput = FileHandle.nullDevice
+        chmod.standardError = FileHandle.nullDevice
+        try? chmod.run()
+        chmod.waitUntilExit()
+
+        let cleanup = Process()
+        cleanup.executableURL = URL(fileURLWithPath: "/bin/bash")
+        cleanup.arguments = [cleanupScript]
+        cleanup.standardOutput = FileHandle.nullDevice
+        cleanup.standardError = FileHandle.nullDevice
+        // Use QualityOfService to avoid inheriting the app's termination
+        cleanup.qualityOfService = .background
+        try? cleanup.run()
+
+        // 9. Quit the app
+        DispatchQueue.main.async {
+            NSApp.terminate(nil)
+        }
     }
 }
 

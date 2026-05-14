@@ -5,6 +5,7 @@ struct ContentView: View {
     @State private var testMessage = "Hello, this is AEON voice."
     @State private var testVoiceId = "en-US-AndrewNeural"
     @State private var notificationsExpanded = false
+    @State private var showUninstallConfirm = false
 
     var body: some View {
         ScrollView {
@@ -52,6 +53,11 @@ struct ContentView: View {
                 notificationsCollapsible
                     .padding(16)
 
+                Divider().padding(.horizontal, 16)
+
+                uninstallSection
+                    .padding(16)
+
                 Divider()
 
                 Button(action: { NSApp.terminate(nil) }) {
@@ -70,6 +76,14 @@ struct ContentView: View {
         // intended panel size and let the ScrollView handle overflow.
         .frame(width: 360, height: 680)
         .onAppear { testVoiceId = manager.config.defaultVoice }
+        .alert("Uninstall AEON Voice?", isPresented: $showUninstallConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Uninstall", role: .destructive) {
+                manager.performUninstall()
+            }
+        } message: {
+            Text("This will permanently remove AEON Voice and all its data:\n\n• App bundle\n• Voice scripts\n• LaunchAgent\n• Copilot instruction file\n• Config and state files\n• Temp audio files\n\nThis cannot be undone.")
+        }
     }
 
     // MARK: - Status Card
@@ -241,6 +255,21 @@ struct ContentView: View {
                 .toggleStyle(.checkbox)
             }
             .help("Automatically suppresses voice output when a Microsoft Teams call is detected via macOS power assertions.")
+
+            HStack {
+                Toggle(isOn: Binding(
+                    get: { manager.config.subagentVoice },
+                    set: { newValue in
+                        manager.config.subagentVoice = newValue
+                        manager.saveConfig()
+                    }
+                )) {
+                    Text("Allow subagent voice")
+                        .font(.caption)
+                }
+                .toggleStyle(.checkbox)
+            }
+            .help("When disabled (default), subagents dispatched by the main agent are silenced. Enable to let subagents speak too.")
 
         }
     }
@@ -508,6 +537,26 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    // MARK: - Uninstall
+
+    private var uninstallSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("DANGER ZONE")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Button(action: { showUninstallConfirm = true }) {
+                Label("Uninstall AEON Voice", systemImage: "trash.fill")
+                    .font(.caption)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .controlSize(.small)
+            .help("Completely remove AEON Voice: app, scripts, config, LaunchAgent, and all related files")
         }
     }
 
