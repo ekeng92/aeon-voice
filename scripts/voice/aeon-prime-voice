@@ -6,12 +6,24 @@ source "$HOME/.local/bin/aeon-voice-common"
 
 session=""
 prompt=""
+is_subagent=false
 while [[ $# -gt 1 ]]; do
   case "$1" in
     --session|-s) session="$2"; shift 2 ;;
     --prompt|-p) prompt="$2"; shift 2 ;;
+    --subagent) is_subagent=true; shift ;;
     *) break ;;
   esac
 done
+
+# If this is a subagent call, check config — exit silently if disabled
+if [[ "$is_subagent" == "true" ]]; then
+  subagent_allowed="$(read_config_value subagentVoice false)"
+  if [[ "$subagent_allowed" != "true" ]]; then
+    exit 0
+  fi
+  # Prefix session to indicate subagent origin in notifications
+  session="↳ ${session}"
+fi
 
 speak_edge_tts "en-US-AndrewNeural" "" "$1" "$session" "$prompt"

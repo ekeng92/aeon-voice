@@ -26,11 +26,27 @@ Agents use a single command for all voice output:
 
 The voice, speed, and maximum message length are configured in the **AEON Voice** menu bar app. Settings are stored in `~/.aeon-voice-config.json`.
 
+### Subagent Voice
+
+Subagents (any agent dispatched via `runSubagent` or similar delegation) MUST add the `--subagent` flag:
+
+```bash
+~/.local/bin/aeon-voice --subagent --session "<AgentMode> · <workspace>" --prompt "<truncated user prompt>" "<message>"
+```
+
+When `--subagent` is passed:
+- The script checks `subagentVoice` in `~/.aeon-voice-config.json`. If `false` (the default), the voice command exits silently — no audio is produced
+- If `subagentVoice` is `true`, the voice plays normally
+
+**How agents determine if they are a subagent**: If you were invoked via `runSubagent`, dispatched by another agent, or your prompt begins with a dispatch preamble (e.g. "You are being dispatched by…"), you ARE a subagent. The parent/orchestrating agent is NOT a subagent. When in doubt, add `--subagent`.
+
 ## When to Voice
 
-Agents MUST voice in these situations:
+**THIS IS NOT OPTIONAL.** Agents MUST voice in these situations — skipping voice is a protocol violation:
 1. **Done working** — finished the requested task or a meaningful chunk of work
 2. **Waiting for input** — stopped and need the user to respond, decide, or unblock
+
+Voice MUST happen BEFORE calling `task_complete`. The voice step is part of task completion.
 
 ## How to Voice
 
@@ -39,9 +55,14 @@ Follow these steps every time a voice trigger occurs:
 1. **Check the toggle**: Read `~/.aeon-voice-enabled`. If the contents are NOT exactly `on`, skip the terminal voice command — but still output the chat echo (step 2)
 2. **Echo in chat**: Output the message text as a quoted line in the chat response:
    `> 🔊 "Done. Built the component and all tests pass."`
+   For subagents, prefix with the agent name: `> 🔊 [AEON QA] "All tests pass, no regressions found."`
 3. **Run the voice command** (only if toggle is `on`):
    ```bash
+   # Parent/orchestrating agent:
    [[ "$(cat ~/.aeon-voice-enabled 2>/dev/null)" == "on" ]] && ~/.local/bin/aeon-voice --session "<AgentMode> · <workspace>" --prompt "<truncated user prompt>" "Done. Built the component and all tests pass."
+
+   # Subagent (dispatched via runSubagent or delegation):
+   [[ "$(cat ~/.aeon-voice-enabled 2>/dev/null)" == "on" ]] && ~/.local/bin/aeon-voice --subagent --session "<AgentMode> · <workspace>" --prompt "<truncated user prompt>" "All tests pass, no regressions found."
    ```
 4. **Terminal pattern**: Use `run_in_terminal` with `mode=async` and `timeout=5000`. The script detaches playback internally and returns instantly
 
